@@ -1,11 +1,11 @@
-# pbs_viewer_app.py
+?# pbs_viewer_app.py
 import streamlit as st
 import duckdb, pandas as pd
 from pathlib import Path
 import altair as alt
 
 # Path to your DuckDB database (adjust if you moved it)
-DB_PATH = Path.home() / "Downloads" / "KMC" / "out" / "pbs_prices.duckdb"
+DB_PATH = Path("./out/pbs_prices.duckdb")
 
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
