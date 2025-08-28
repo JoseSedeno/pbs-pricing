@@ -1,4 +1,4 @@
-?# pbs_viewer_app.py
+# pbs_viewer_app.py
 import streamlit as st
 import duckdb, pandas as pd
 from pathlib import Path
