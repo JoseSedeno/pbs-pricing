@@ -75,23 +75,44 @@ if merge:
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("month:T", title="Month"),
+            x=alt.X(
+                "month:T",
+                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)
+            ),
             y=alt.Y("aemp:Q", title="AEMP"),
-            tooltip=["month:T", "aemp:Q"],
+            tooltip=[
+                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                alt.Tooltip("aemp:Q", title="AEMP"),
+            ],
         )
-        .properties(height=450)
+        .properties(
+            height=450,
+            title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start")
+        )
+        .interactive(bind_x=True)
     )
 else:
     chart = (
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X("month:T", title="Month"),
+            x=alt.X(
+                "month:T",
+                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)
+            ),
             y=alt.Y("aemp:Q", title="AEMP"),
             color=alt.Color("item_code:N", title="Item Code"),
-            tooltip=["month:T", "item_code:N", "aemp:Q"],
+            tooltip=[
+                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                alt.Tooltip("item_code:N", title="Item"),
+                alt.Tooltip("aemp:Q", title="AEMP"),
+            ],
         )
-        .properties(height=450)
+        .properties(
+            height=450,
+            title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start")
+        )
+        .interactive(bind_x=True)
     )
 
 st.altair_chart(chart, use_container_width=True)
