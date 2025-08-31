@@ -62,6 +62,8 @@ with st.sidebar:
                "ON to view a single continuous series.")
 
 df = get_series(drug, merge)
+df["month"] = pd.to_datetime(df["month"], errors="coerce")
+df = df.sort_values("month")
 
 if df.empty:
     st.warning("No data for this selection.")
