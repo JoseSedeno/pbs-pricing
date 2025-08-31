@@ -49,6 +49,65 @@ def get_series(drug: str, merge_codes: bool):
         """
         df = con.execute(sql, [drug]).df()
     return df
+    
+@st.cache_data
+def build_export_table(drug: str) -> pd.DataFrame:
+    # 1) Long series per item (ignore merge toggle for export)
+    s = get_series(drug, merge_codes=False).copy()
+    s["month"] = pd.to_datetime(s["month"], errors="coerce")
+    s = s.dropna(subset=["month"])
+
+    # 2) Month headers like "AEMP Aug 13"
+    s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
+
+    # 3) Pivot to wide (one row per Item Code, one col per month)
+    wide = (
+        s.pivot_table(
+            index="item_code",
+            columns="col_label",
+            values="aemp",
+            aggfunc="first",
+        )
+        .reset_index()
+        .rename(columns={"item_code": "Item Code"})
+    )
+
+    # 4) Item metadata to appear before month columns
+    meta_sql = """
+    SELECT
+      d.item_code_b                AS "Item Code",
+      d.name_a                     AS "Legal Instrument Drug",
+      d.legal_instrument_form      AS "Legal Instrument Form",
+      d.legal_instrument_moa       AS "Legal Instrument MoA",
+      d.brand_name                 AS "Brand Name",
+      d.formulary                  AS "Formulary",
+      d.manufacturer_code          AS "Manufacturer Code"
+    FROM dim_product_line d
+    WHERE lower(d.name_a) = lower(?)
+    ORDER BY 1
+    """
+    meta = con.execute(meta_sql, [drug]).df()
+
+    # 5) Join meta + prices
+    out = meta.merge(wide, on="Item Code", how="left")
+
+    # 6) Fixed columns first, then months in chronological order
+    fixed = [
+        "Item Code",
+        "Legal Instrument Drug",
+        "Legal Instrument Form",
+        "Legal Instrument MoA",
+        "Brand Name",
+        "Formulary",
+        "Manufacturer Code",
+    ]
+    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
+    month_cols = sorted(
+        month_cols,
+        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"),
+    )
+
+    return out[[c for c in fixed if c in out.columns] + month_cols]
 
 with st.sidebar:
     st.subheader("Filters")
@@ -125,4 +184,19 @@ st.dataframe(df)
 # Download
 csv = df.to_csv(index=False).encode("utf-8")
 st.download_button("Download CSV", csv, file_name=f"{drug.replace(' ','_').lower()}_aemp_series.csv", mime="text/csv")
+
+# ---- Excel-style export (wide) ----
+st.subheader("Export view: item info + AEMP by month")
+
+export_df = build_export_table(drug)
+st.dataframe(export_df, use_container_width=True)
+
+export_csv = export_df.to_csv(index=False).encode("utf-8")
+st.download_button(
+    "Download Excel-style table",
+    export_csv,
+    file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
+    mime="text/csv",
+)
+
 
