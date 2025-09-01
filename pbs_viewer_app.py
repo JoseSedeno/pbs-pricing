@@ -17,7 +17,7 @@ con = duckdb.connect(str(DB_PATH), read_only=True)
 
 # Make a view with friendlier names so we can select by the labels we expect
 con.execute("""
-CREATE OR REPLACE VIEW dim_product_line_named AS
+CREATE OR REPLACE TEMP VIEW dim_product_line_named AS
 SELECT
   product_line_id,
   item_code_b,
