@@ -194,25 +194,22 @@ else:
 
 st.altair_chart(chart, use_container_width=True)
 
-# Show a small table under the chart
-st.dataframe(df)
+# ===== SECTION: WIDE TABLE & DOWNLOAD (Item info + AEMP by month) =====
+st.markdown("### Item info + AEMP by month (wide)")
+st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 
-# Download
-csv = df.to_csv(index=False).encode("utf-8")
-st.download_button("Download CSV", csv, file_name=f"{drug.replace(' ','_').lower()}_aemp_series.csv", mime="text/csv")
-
-# ---- Excel-style export (wide) ----
-st.subheader("Export view: item info + AEMP by month")
-
+# Build the wide table
 export_df = build_export_table(drug)
 st.dataframe(export_df, use_container_width=True)
 
+# Download (CSV of the same wide table shown above)
 export_csv = export_df.to_csv(index=False).encode("utf-8")
 st.download_button(
-    "Download Excel-style table",
-    export_csv,
+    label=f"Download AEMP wide CSV — {drug}",
+    data=export_csv,
     file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
     mime="text/csv",
 )
+# ===== END SECTION: WIDE TABLE & DOWNLOAD =====
 
 
