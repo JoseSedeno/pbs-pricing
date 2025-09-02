@@ -16,19 +16,31 @@ if not DB_PATH.exists():
 con = duckdb.connect(str(DB_PATH), read_only=True)
 
 # Make a view with friendlier names so we can select by the labels we expect
-con.execute("""
-CREATE OR REPLACE TEMP VIEW dim_product_line_named AS
+meta_sql = """
+WITH d AS (
+  SELECT
+    product_line_id,
+    item_code_b,
+    name_a,
+    attr_f AS legal_instrument_form,
+    attr_g AS legal_instrument_moa,
+    brand_name,
+    formulary,
+    manufacturer_code
+  FROM dim_product_line
+)
 SELECT
-  product_line_id,
-  item_code_b,
-  name_a,
-  attr_f AS legal_instrument_form,
-  attr_g AS legal_instrument_moa,
-  brand_name,
-  formulary,
-  manufacturer_code
-FROM dim_product_line;
-""")
+  d.item_code_b                AS "Item Code",
+  d.name_a                     AS "Legal Instrument Drug",
+  d.legal_instrument_form      AS "Legal Instrument Form",
+  d.legal_instrument_moa       AS "Legal Instrument MoA",
+  d.brand_name                 AS "Brand Name",
+  d.formulary                  AS "Formulary",
+  d.manufacturer_code          AS "Manufacturer Code"
+FROM d
+WHERE lower(d.name_a) = lower(?)
+ORDER BY 1
+"""
 
 @st.cache_data
 def get_drugs():
@@ -88,20 +100,9 @@ def build_export_table(drug: str) -> pd.DataFrame:
     )
 
     # 4) Item metadata to appear before month columns
-    meta_sql = """
-    SELECT
-      d.item_code_b                AS "Item Code",
-      d.name_a                     AS "Legal Instrument Drug",
-      d.legal_instrument_form      AS "Legal Instrument Form",
-      d.legal_instrument_moa       AS "Legal Instrument MoA",
-      d.brand_name                 AS "Brand Name",
-      d.formulary                  AS "Formulary",
-      d.manufacturer_code          AS "Manufacturer Code"
-    FROM dim_product_line_named d
-    WHERE lower(d.name_a) = lower(?)
-    ORDER BY 1
-    """
-    meta = con.execute(meta_sql, [drug]).df()
+    meta = con.execute(meta_sql, [drug]).df()  # uses the CTE defined at the top of the file
+    # st.write("META COLUMNS:", list(meta.columns))
+    # st.write(meta.head())
 
     # 5) Join meta + prices
     out = meta.merge(wide, on="Item Code", how="left")
