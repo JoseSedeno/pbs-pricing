@@ -17,7 +17,7 @@ def ensure_db() -> Path:
     if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
             # Make sure this Drive file is set to: Anyone with the link → Viewer
-            url = "https://drive.google.com/uc?id=1A1xcx8b2Nl0v9X6gMx10jZI-XWheVsBn"
+            url = "https://drive.google.com/file/d/1tVpP0p3XdSPyzn_GEs6T_q7I1Zkk3Veb/view?usp=sharing"
             # fuzzy=True handles Google Drive “are you sure?” confirmation pages
             gdown.download(url, str(db_path), quiet=False, fuzzy=True)
 
