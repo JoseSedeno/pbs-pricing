@@ -26,12 +26,34 @@ def ensure_db() -> Path:
 
 # Path to your DuckDB database (adjust if you moved it)
 DB_PATH = ensure_db()  # <- new
-
+    
+# --- sanity checks before connecting ---
+st.caption(f"DB path: {DB_PATH}")
 if not DB_PATH.exists():
-    st.error(f"Could not get database at: {DB_PATH}")
+    st.error(
+        "Database file not found after download.\n\n"
+        "Likely causes:\n"
+        "• Google Drive link is not set to “Anyone with the link – Viewer”\n"
+        "• File ID in the URL is wrong\n"
+        "• Download blocked by Drive confirmation"
+    )
     st.stop()
 
-con = duckdb.connect(str(DB_PATH), read_only=True)
+size_bytes = DB_PATH.stat().st_size
+st.caption(f"DB size: {size_bytes:,} bytes")
+if size_bytes < 1024:   # tiny -> almost certainly a failed download
+    st.error(
+        "The downloaded database looks too small.\n\n"
+        "Please check the Drive link permissions and file ID."
+    )
+    st.stop()
+
+# ---- actually open the DB ----
+try:
+    con = duckdb.connect(str(DB_PATH), read_only=True)
+except Exception as e:
+    st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
+    st.stop()
 
 # Make a view with friendlier names so we can select by the labels we expect
 meta_sql = """
