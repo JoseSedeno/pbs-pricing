@@ -2,15 +2,30 @@ import streamlit as st
 import duckdb, pandas as pd
 from pathlib import Path
 import altair as alt
+import gdown
 
-# Path to your DuckDB database (adjust if you moved it)
-DB_PATH = Path("./out/pbs_prices.duckdb")
-
+# Streamlit page config should be the first Streamlit call
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
+def ensure_db() -> Path:
+    """Make sure ./out/pbs_prices.duckdb exists; download from Drive if missing."""
+    out_dir = Path("out")
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    db_path = out_dir / "pbs_prices.duckdb"
+    if not db_path.exists():
+        with st.spinner("Downloading database from Google Drive (first run only)…"):
+            # Your shared Drive file (must be 'Anyone with the link can view')
+            url = "https://drive.google.com/uc?id=1A1xcx8b2Nl0v9X6gMx10jZI-XWheVsBn"
+            gdown.download(url, str(db_path), quiet=False)
+    return db_path
+
+# Path to your DuckDB database (adjust if you moved it)
+DB_PATH = ensure_db()  # <- new
+
 if not DB_PATH.exists():
-    st.error(f"Database not found: {DB_PATH}")
+    st.error(f"Could not get database at: {DB_PATH}")
     st.stop()
 
 con = duckdb.connect(str(DB_PATH), read_only=True)
