@@ -9,44 +9,41 @@ st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
 def ensure_db() -> Path:
-    """Ensure a local duckdb file exists in a writable place on Streamlit Cloud."""
-    # Use a writable temp directory on Streamlit Cloud
-    cache_dir = Path("/tmp/pbs_cache")
-    cache_dir.mkdir(parents=True, exist_ok=True)
+    """Make sure ./out/pbs_prices.duckdb exists; download from Drive if missing."""
+    out_dir = Path("out")
+    out_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = cache_dir / "pbs_prices.duckdb"
-
-    # If missing or suspiciously small, (re)download from Google Drive
-    if not db_path.exists() or db_path.stat().st_size < 1_000_000:
+    db_path = out_dir / "pbs_prices.duckdb"
+    if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
+            # Make sure this Drive file is set to: Anyone with the link → Viewer
             url = "https://drive.google.com/uc?id=1A1xcx8b2Nl0v9X6gMx10jZI-XWheVsBn"
-            gdown.download(url, str(db_path), quiet=False)
+            # fuzzy=True handles Google Drive “are you sure?” confirmation pages
+            gdown.download(url, str(db_path), quiet=False, fuzzy=True)
+
+    # --- sanity checks & debug info ---
+    st.caption(f"DB path: {db_path}")
+    if not db_path.exists():
+        st.error(
+            "Database file not found after download.\n\n"
+            "• Make sure the Drive link is set to ‘Anyone with the link – Viewer’\n"
+            "• Verify the file ID in the URL\n"
+        )
+        st.stop()
+
+    size_bytes = db_path.stat().st_size
+    st.caption(f"DB size: {size_bytes:,} bytes")
+    if size_bytes < 1024:
+        st.error(
+            "The downloaded database looks too small (likely a failed download).\n\n"
+            "Please double-check the Drive link permissions and file ID."
+        )
+        st.stop()
 
     return db_path
 
-# Path to your DuckDB database (adjust if you moved it)
-DB_PATH = ensure_db()  # <- new
-    
-# --- sanity checks before connecting ---
-st.caption(f"DB path: {DB_PATH}")
-if not DB_PATH.exists():
-    st.error(
-        "Database file not found after download.\n\n"
-        "Likely causes:\n"
-        "• Google Drive link is not set to “Anyone with the link – Viewer”\n"
-        "• File ID in the URL is wrong\n"
-        "• Download blocked by Drive confirmation"
-    )
-    st.stop()
-
-size_bytes = DB_PATH.stat().st_size
-st.caption(f"DB size: {size_bytes:,} bytes")
-if size_bytes < 1024:   # tiny -> almost certainly a failed download
-    st.error(
-        "The downloaded database looks too small.\n\n"
-        "Please check the Drive link permissions and file ID."
-    )
-    st.stop()
+# Get the DB path (download on first run)
+DB_PATH = ensure_db()
 
 # ---- actually open the DB ----
 try:
@@ -116,7 +113,7 @@ def get_series(drug: str, merge_codes: bool):
         """
         df = con.execute(sql, [drug]).df()
     return df
-    
+
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
     # 1) Long series per item (ignore merge toggle for export)
@@ -140,10 +137,7 @@ def build_export_table(drug: str) -> pd.DataFrame:
     )
 
     # 4) Item metadata to appear before month columns
-    meta = con.execute(meta_sql, [drug]).df()  # uses the CTE defined at the top of the file
-    # st.write("META COLUMNS:", list(meta.columns))
-    # st.write(meta.head())
-
+    meta = con.execute(meta_sql, [drug]).df()
     # 5) Join meta + prices
     out = meta.merge(wide, on="Item Code", how="left")
 
@@ -159,8 +153,7 @@ def build_export_table(drug: str) -> pd.DataFrame:
     ]
     month_cols = [c for c in out.columns if c.startswith("AEMP ")]
     month_cols = sorted(
-        month_cols,
-        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"),
+        month_cols, key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"),
     )
 
     return out[[c for c in fixed if c in out.columns] + month_cols]
@@ -173,8 +166,10 @@ with st.sidebar:
         st.stop()
     drug = st.selectbox("Legal Instrument Drug", drugs, index=0)
     merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
-    st.caption("Tip: leave this OFF to see separate lines per Item Code, "
-               "ON to view a single continuous series.")
+    st.caption(
+        "Tip: leave this OFF to see separate lines per Item Code, "
+        "ON to view a single continuous series."
+    )
 
 df = get_series(drug, merge)
 df["month"] = pd.to_datetime(df["month"], errors="coerce")
@@ -192,20 +187,14 @@ if merge:
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X(
-                "month:T",
-                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)
-            ),
+            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
             tooltip=[
                 alt.Tooltip("month:T", title="Month", format="%Y-%m"),
                 alt.Tooltip("aemp:Q", title="AEMP"),
             ],
         )
-        .properties(
-            height=450,
-            title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start")
-        )
+        .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
         .interactive(bind_x=True)
     )
 else:
@@ -213,10 +202,7 @@ else:
         alt.Chart(df)
         .mark_line(point=True)
         .encode(
-            x=alt.X(
-                "month:T",
-                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)
-            ),
+            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
             color=alt.Color("item_code:N", title="Item Code"),
             tooltip=[
@@ -225,10 +211,7 @@ else:
                 alt.Tooltip("aemp:Q", title="AEMP"),
             ],
         )
-        .properties(
-            height=450,
-            title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start")
-        )
+        .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
         .interactive(bind_x=True)
     )
 
@@ -237,21 +220,15 @@ st.altair_chart(chart, use_container_width=True)
 # ---- Small table under the chart (pretty Month)
 df_small = df.copy()
 df_small["Month"] = pd.to_datetime(df_small["month"], errors="coerce").dt.strftime("%b %Y")
-if "item_code" in df_small.columns:
-    small_cols = ["Month", "item_code", "aemp"]
-else:
-    small_cols = ["Month", "aemp"]
+small_cols = ["Month", "aemp"] if "item_code" not in df_small.columns else ["Month", "item_code", "aemp"]
 st.dataframe(df_small[small_cols], use_container_width=True)
 
 # ===== SECTION: WIDE TABLE & DOWNLOAD (Item info + AEMP by month) =====
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
-
-# Build the wide table
 export_df = build_export_table(drug)
 st.dataframe(export_df, use_container_width=True)
 
-# Download (CSV of the same wide table shown above)
 export_csv = export_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     label=f"Download AEMP wide CSV — {drug}",
@@ -259,7 +236,7 @@ st.download_button(
     file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
     mime="text/csv",
 )
-# ===== END SECTION: WIDE TABLE & DOWNLOAD =====
+
 
 
 
