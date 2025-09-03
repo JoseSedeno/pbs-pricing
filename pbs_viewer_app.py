@@ -9,28 +9,18 @@ st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
 def ensure_db() -> Path:
-    """Make sure ./out/pbs_prices.duckdb exists; download from Drive if missing."""
-    out_dir = Path("out")
-    out_dir.mkdir(parents=True, exist_ok=True)
+    """Ensure a local duckdb file exists in a writable place on Streamlit Cloud."""
+    # Use a writable temp directory on Streamlit Cloud
+    cache_dir = Path("/tmp/pbs_cache")
+    cache_dir.mkdir(parents=True, exist_ok=True)
 
-    db_path = out_dir / "pbs_prices.duckdb"
-    if not db_path.exists():
+    db_path = cache_dir / "pbs_prices.duckdb"
+
+    # If missing or suspiciously small, (re)download from Google Drive
+    if not db_path.exists() or db_path.stat().st_size < 1_000_000:
         with st.spinner("Downloading database from Google Drive (first run only)…"):
             url = "https://drive.google.com/uc?id=1A1xcx8b2Nl0v9X6gMx10jZI-XWheVsBn"
-            try:
-                gdown.download(url, str(db_path), quiet=False, fuzzy=True)
-            except Exception as e:
-                st.error(f"Download failed: {e}")
-                st.stop()
-
-            # sanity check
-            try:
-                if db_path.stat().st_size == 0:
-                    st.error("Downloaded database file is empty. Please try again.")
-                    st.stop()
-            except FileNotFoundError:
-                st.error("Database file was not created. Please try again.")
-                st.stop()
+            gdown.download(url, str(db_path), quiet=False)
 
     return db_path
 
