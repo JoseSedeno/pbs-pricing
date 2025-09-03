@@ -16,9 +16,22 @@ def ensure_db() -> Path:
     db_path = out_dir / "pbs_prices.duckdb"
     if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
-            # Your shared Drive file (must be 'Anyone with the link can view')
             url = "https://drive.google.com/uc?id=1A1xcx8b2Nl0v9X6gMx10jZI-XWheVsBn"
-            gdown.download(url, str(db_path), quiet=False)
+            try:
+                gdown.download(url, str(db_path), quiet=False, fuzzy=True)
+            except Exception as e:
+                st.error(f"Download failed: {e}")
+                st.stop()
+
+            # sanity check
+            try:
+                if db_path.stat().st_size == 0:
+                    st.error("Downloaded database file is empty. Please try again.")
+                    st.stop()
+            except FileNotFoundError:
+                st.error("Database file was not created. Please try again.")
+                st.stop()
+
     return db_path
 
 # Path to your DuckDB database (adjust if you moved it)
