@@ -209,6 +209,15 @@ else:
 
 st.altair_chart(chart, use_container_width=True)
 
+# ---- Small table under the chart (pretty Month)
+df_small = df.copy()
+df_small["Month"] = pd.to_datetime(df_small["month"], errors="coerce").dt.strftime("%b %Y")
+if "item_code" in df_small.columns:
+    small_cols = ["Month", "item_code", "aemp"]
+else:
+    small_cols = ["Month", "aemp"]
+st.dataframe(df_small[small_cols], use_container_width=True)
+
 # ===== SECTION: WIDE TABLE & DOWNLOAD (Item info + AEMP by month) =====
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
@@ -226,5 +235,6 @@ st.download_button(
     mime="text/csv",
 )
 # ===== END SECTION: WIDE TABLE & DOWNLOAD =====
+
 
 
