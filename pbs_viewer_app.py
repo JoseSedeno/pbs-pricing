@@ -4,7 +4,7 @@ from pathlib import Path
 import altair as alt
 import gdown
 
-# Streamlit page config should be the first Streamlit call
+# ---- Page setup ----
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
@@ -18,65 +18,63 @@ def ensure_db() -> Path:
         with st.spinner("Downloading database from Google Drive (first run only)…"):
             # Make sure this Drive file is set to: Anyone with the link → Viewer
             url = "https://drive.google.com/file/d/1tVpP0p3XdSPyzn_GEs6T_q7I1Zkk3Veb/view?usp=sharing"
-            # fuzzy=True handles Google Drive “are you sure?” confirmation pages
             gdown.download(url, str(db_path), quiet=False, fuzzy=True)
 
-    # --- sanity checks & debug info ---
     st.caption(f"DB path: {db_path}")
     if not db_path.exists():
-        st.error(
-            "Database file not found after download.\n\n"
-            "• Make sure the Drive link is set to ‘Anyone with the link – Viewer’\n"
-            "• Verify the file ID in the URL\n"
-        )
-        st.stop()
+        st.error("Database file not found after download."); st.stop()
 
     size_bytes = db_path.stat().st_size
     st.caption(f"DB size: {size_bytes:,} bytes")
     if size_bytes < 1024:
-        st.error(
-            "The downloaded database looks too small (likely a failed download).\n\n"
-            "Please double-check the Drive link permissions and file ID."
-        )
-        st.stop()
-
+        st.error("Downloaded DB looks too small (likely failed download)."); st.stop()
     return db_path
 
-# Get the DB path (download on first run)
 DB_PATH = ensure_db()
 
-# ---- actually open the DB ----
+# ---- Open DuckDB ----
 try:
     con = duckdb.connect(str(DB_PATH), read_only=True)
 except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
 
-# Make a view with friendlier names so we can select by the labels we expect
+# ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 meta_sql = """
 WITH d AS (
   SELECT
     product_line_id,
     item_code_b,
     name_a,
-    attr_f AS legal_instrument_form,
-    attr_g AS legal_instrument_moa,
+    attr_c AS form_c,
+    attr_f AS form_f,
+    name_b AS responsible_person,
+    brand_name AS line_brand,
+    formulary  AS line_formulary
+  FROM dim_product_line
+),
+fm AS (
+  SELECT
+    product_line_id,
     brand_name,
     formulary,
-    manufacturer_code
-  FROM dim_product_line
+    amt_trade_product_pack,
+    ROW_NUMBER() OVER (PARTITION BY product_line_id ORDER BY snapshot_date DESC) AS rn
+  FROM fact_monthly
 )
 SELECT
-  d.item_code_b                AS "Item Code",
-  d.name_a                     AS "Legal Instrument Drug",
-  d.legal_instrument_form      AS "Legal Instrument Form",
-  d.legal_instrument_moa       AS "Legal Instrument MoA",
-  d.brand_name                 AS "Brand Name",
-  d.formulary                  AS "Formulary",
-  d.manufacturer_code          AS "Manufacturer Code"
+  d.item_code_b                                        AS "Item Code",
+  d.name_a                                             AS "Legal Instrument Drug",
+  COALESCE(d.form_c, d.form_f)                         AS "Legal Instrument Form",
+  COALESCE(fm.brand_name, d.line_brand)                AS "Brand Name",
+  COALESCE(fm.formulary,  d.line_formulary)            AS "Formulary",
+  d.responsible_person                                 AS "Responsible Person",
+  fm.amt_trade_product_pack                            AS "AMT Trade Product Pack"
 FROM d
+LEFT JOIN fm
+  ON fm.product_line_id = d.product_line_id AND fm.rn = 1
 WHERE lower(d.name_a) = lower(?)
-ORDER BY 1
+ORDER BY 1;
 """
 
 @st.cache_data
@@ -87,7 +85,6 @@ def get_drugs():
 @st.cache_data
 def get_series(drug: str, merge_codes: bool):
     if merge_codes:
-        # Treat all item codes for this drug as one series (average if multiple per month)
         sql = """
         SELECT
           f.snapshot_date::DATE AS month,
@@ -100,7 +97,6 @@ def get_series(drug: str, merge_codes: bool):
         """
         df = con.execute(sql, [drug]).df()
     else:
-        # One line per Item Code (default behavior)
         sql = """
         SELECT
           f.snapshot_date::DATE AS month,
@@ -116,15 +112,15 @@ def get_series(drug: str, merge_codes: bool):
 
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # 1) Long series per item (ignore merge toggle for export)
+    # Long series per item
     s = get_series(drug, merge_codes=False).copy()
     s["month"] = pd.to_datetime(s["month"], errors="coerce")
     s = s.dropna(subset=["month"])
 
-    # 2) Month headers like "AEMP Aug 13"
+    # Month headers like "AEMP Aug 13"
     s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
 
-    # 3) Pivot to wide (one row per Item Code, one col per month)
+    # Wide pivot for prices
     wide = (
         s.pivot_table(
             index="item_code",
@@ -136,34 +132,33 @@ def build_export_table(drug: str) -> pd.DataFrame:
         .rename(columns={"item_code": "Item Code"})
     )
 
-    # 4) Item metadata to appear before month columns
+    # Left metadata (latest snapshot fields included)
     meta = con.execute(meta_sql, [drug]).df()
-    # 5) Join meta + prices
+
+    # Join meta + prices
     out = meta.merge(wide, on="Item Code", how="left")
 
-    # 6) Fixed columns first, then months in chronological order
+    # Fixed left columns (exact order) + months (chronological)
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
         "Legal Instrument Form",
-        "Legal Instrument MoA",
         "Brand Name",
         "Formulary",
-        "Manufacturer Code",
+        "Responsible Person",
+        "AMT Trade Product Pack",
     ]
     month_cols = [c for c in out.columns if c.startswith("AEMP ")]
-    month_cols = sorted(
-        month_cols, key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"),
-    )
+    month_cols = sorted(month_cols, key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"))
 
     return out[[c for c in fixed if c in out.columns] + month_cols]
 
+# ---- Sidebar ----
 with st.sidebar:
     st.subheader("Filters")
     drugs = get_drugs()
     if not drugs:
-        st.error("No drugs found in dim_product_line.")
-        st.stop()
+        st.error("No drugs found in dim_product_line."); st.stop()
     drug = st.selectbox("Legal Instrument Drug", drugs, index=0)
     merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
     st.caption(
@@ -171,13 +166,12 @@ with st.sidebar:
         "ON to view a single continuous series."
     )
 
+# ---- Series & chart ----
 df = get_series(drug, merge)
 df["month"] = pd.to_datetime(df["month"], errors="coerce")
 df = df.sort_values("month")
-
 if df.empty:
-    st.warning("No data for this selection.")
-    st.stop()
+    st.warning("No data for this selection."); st.stop()
 
 st.write(f"**Database:** `{DB_PATH}`")
 st.write(f"**Drug:** {drug}")
@@ -189,10 +183,8 @@ if merge:
         .encode(
             x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
-            tooltip=[
-                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                alt.Tooltip("aemp:Q", title="AEMP"),
-            ],
+            tooltip=[alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                     alt.Tooltip("aemp:Q", title="AEMP")],
         )
         .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
         .interactive(bind_x=True)
@@ -205,11 +197,9 @@ else:
             x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
             color=alt.Color("item_code:N", title="Item Code"),
-            tooltip=[
-                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                alt.Tooltip("item_code:N", title="Item"),
-                alt.Tooltip("aemp:Q", title="AEMP"),
-            ],
+            tooltip=[alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                     alt.Tooltip("item_code:N", title="Item"),
+                     alt.Tooltip("aemp:Q", title="AEMP")],
         )
         .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
         .interactive(bind_x=True)
@@ -217,13 +207,13 @@ else:
 
 st.altair_chart(chart, use_container_width=True)
 
-# ---- Small table under the chart (pretty Month)
+# ---- Small table under the chart ----
 df_small = df.copy()
 df_small["Month"] = pd.to_datetime(df_small["month"], errors="coerce").dt.strftime("%b %Y")
 small_cols = ["Month", "aemp"] if "item_code" not in df_small.columns else ["Month", "item_code", "aemp"]
 st.dataframe(df_small[small_cols], use_container_width=True)
 
-# ===== SECTION: WIDE TABLE & DOWNLOAD (Item info + AEMP by month) =====
+# ---- Wide table & download ----
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 export_df = build_export_table(drug)
