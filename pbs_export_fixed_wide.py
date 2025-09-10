@@ -8,12 +8,12 @@ Left block identifiers in this exact order:
 - Legal Instrument Drug          (B)
 - Legal Instrument Form          (C)
 - Brand Name                     (E)  from latest snapshot
-- Formulary                      (F)
+- Formulary                      (F)  from latest snapshot
 - Responsible Person             (I)
 - AMT Trade Product Pack         (X)  from latest snapshot
 
 Prevents double ups by:
-1) sourcing Brand and AMT from one place only (latest snapshot)
+1) sourcing Brand, Formulary and AMT from one place only (latest snapshot)
 2) normalizing identifier strings
 3) dropping duplicates per month before pivot
 
@@ -123,8 +123,8 @@ def main():
         ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),            # A
         ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]),       # B
         ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),            # C
-        ("Brand Name",            ["brand_name", "attr_g", "brand"]),                      # E (will be replaced by price-table value if present)
-        ("Formulary",             ["formulary", "attr_j"]),                                # F
+        ("Brand Name",            ["brand_name", "attr_g", "brand"]),                      # E (replaced by price-table value if present)
+        ("Formulary",             ["formulary", "attr_j"]),                                # F (replaced by price-table value if present)
         ("Responsible Person",    ["responsible_person", "name_b"]),                       # I
         # AMT Trade Product Pack comes from price table latest snapshot (X)
     ]
@@ -143,15 +143,23 @@ def main():
     if join_col.lower() not in line_cols_lower:
         raise RuntimeError(f"Join column {join_col} not present in {line_tbl}.")
 
-    # 3.4 Snapshot attributes from price table for Brand and AMT (E, X)
+    # 3.4 Snapshot attributes from price table for Brand, Formulary and AMT (E, F, X)
     price_cols_all = [r[1] for r in con.execute(f"PRAGMA table_info('{price_tbl}')").fetchall()]
     lmap = {c.lower(): c for c in price_cols_all}
 
     pm_aliases = {}
+
+    # Brand from latest snapshot
     if "brand_name" in lmap:
-        pm_aliases[lmap["brand_name"]] = "Brand Name"                       # E from latest snapshot
+        pm_aliases[lmap["brand_name"]] = "Brand Name"
+
+    # Formulary from latest snapshot (overrides line-table value)
+    if "formulary" in lmap:
+        pm_aliases[lmap["formulary"]] = "Formulary"
+
+    # AMT Trade Product Pack from latest snapshot
     if "amt_trade_product_pack" in lmap:
-        pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"  # X
+        pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"
     elif "amt_trade_pack" in lmap:
         pm_aliases[lmap["amt_trade_pack"]] = "AMT Trade Product Pack"
 
@@ -207,11 +215,10 @@ def main():
     ] if c in df.columns]
 
     for c in id_cols:
-        # convert to string, replace non-breaking spaces, collapse whitespace, trim
         df[c] = (
             df[c].astype("string").fillna("")
-                 .str.replace("\u00A0", " ", regex=False)
-                 .str.replace(r"\s+", " ", regex=True)
+                 .str.replace("\u00A0", " ", regex=False)  # non-breaking spaces
+                 .str.replace(r"\s+", " ", regex=True)      # collapse whitespace
                  .str.strip()
         )
 
