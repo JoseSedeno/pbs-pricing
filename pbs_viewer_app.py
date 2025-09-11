@@ -1,6 +1,8 @@
+import os
+from pathlib import Path
+
 import streamlit as st
 import duckdb, pandas as pd
-from pathlib import Path
 import altair as alt
 import gdown
 
@@ -9,11 +11,24 @@ st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
 def ensure_db() -> Path:
-    """Make sure ./out/pbs_prices.duckdb exists; download from Drive if missing."""
+    """
+    Use a local DuckDB. Order of preference:
+      1) PBS_DB_PATH env var
+      2) ./out/pbs_prices.duckdb (download from Drive if missing)
+    """
+    # 1) Env var override
+    env = os.environ.get("PBS_DB_PATH")
+    if env:
+        p = Path(env)
+        if p.exists() and p.stat().st_size > 1024:
+            st.caption(f"Using DB (PBS_DB_PATH): {p}")
+            return p
+
+    # 2) Local ./out path, download if needed
     out_dir = Path("out")
     out_dir.mkdir(parents=True, exist_ok=True)
-
     db_path = out_dir / "pbs_prices.duckdb"
+
     if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
             # Make sure this Drive file is set to: Anyone with the link → Viewer
@@ -39,37 +54,68 @@ except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
 
+# ---------- helpers to adapt to schema ----------
+@st.cache_data
+def table_columns(table: str):
+    rows = con.execute(f'PRAGMA table_info("{table}")').fetchall()
+    # (cid, name, type, notnull, dflt_value, pk)
+    return {r[1].lower(): r[1] for r in rows}  # {lower: exact_case}
+
+def pick_col(cols_map, *candidates, default="NULL"):
+    """Return SQL identifier for the first existing candidate, else default literal."""
+    for c in candidates:
+        if c and c.lower() in cols_map:
+            return f'"{cols_map[c.lower()]}"'
+    return default
+
+# Inspect available columns in both tables (schema-safe)
+d_cols  = table_columns("dim_product_line")
+fm_cols = table_columns("fact_monthly")
+
+# Safe selections for left metadata
+item_code_expr   = pick_col(d_cols, "item_code_b", "item_code")
+form_expr        = pick_col(d_cols, "attr_c", "attr_f", "variant_signature_base", default="NULL")
+resp_expr        = pick_col(d_cols, "responsible_person", "name_b", "resp_person", "contact_person", default="NULL")
+line_brand_expr  = pick_col(d_cols, "brand_name", default="NULL")
+line_formul_expr = pick_col(d_cols, "formulary", "attr_j", default="NULL")
+
+# Latest snapshot fields from fact_monthly
+fm_brand_expr  = pick_col(fm_cols, "brand_name", default="NULL")
+fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
+fm_amt_expr    = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
+
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
-meta_sql = """
+meta_sql = f"""
 WITH d AS (
   SELECT
-    product_line_id,
-    item_code_b,
-    name_a,
-    attr_c AS form_c,
-    attr_f AS form_f,
-    name_b AS responsible_person,
-    brand_name AS line_brand,
-    formulary  AS line_formulary
-  FROM dim_product_line
+    "product_line_id"                           AS product_line_id,
+    {item_code_expr}                            AS item_code_b,
+    "name_a"                                    AS name_a,
+    {form_expr}                                 AS form_src,
+    {resp_expr}                                 AS responsible_person,
+    {line_brand_expr}                           AS line_brand,       -- fallback only
+    {line_formul_expr}                          AS line_formulary    -- fallback only
+  FROM "dim_product_line"
 ),
 fm AS (
   SELECT
-    product_line_id,
-    brand_name,
-    formulary,
-    amt_trade_product_pack,
-    ROW_NUMBER() OVER (PARTITION BY product_line_id ORDER BY snapshot_date DESC) AS rn
-  FROM fact_monthly
+    "product_line_id"                           AS product_line_id,
+    {fm_brand_expr}                             AS fm_brand_name,
+    {fm_formul_expr}                            AS fm_formulary,
+    {fm_amt_expr}                               AS fm_amt_trade_product_pack,
+    ROW_NUMBER() OVER (
+      PARTITION BY "product_line_id" ORDER BY "snapshot_date" DESC
+    ) AS rn
+  FROM "fact_monthly"
 )
 SELECT
-  d.item_code_b                                        AS "Item Code",
-  d.name_a                                             AS "Legal Instrument Drug",
-  COALESCE(d.form_c, d.form_f)                         AS "Legal Instrument Form",
-  COALESCE(fm.brand_name, d.line_brand)                AS "Brand Name",
-  COALESCE(fm.formulary,  d.line_formulary)            AS "Formulary",
-  d.responsible_person                                 AS "Responsible Person",
-  fm.amt_trade_product_pack                            AS "AMT Trade Product Pack"
+  d.item_code_b                                 AS "Item Code",
+  d.name_a                                      AS "Legal Instrument Drug",
+  d.form_src                                    AS "Legal Instrument Form",
+  COALESCE(fm.fm_brand_name, d.line_brand)      AS "Brand Name",
+  COALESCE(fm.fm_formulary,  d.line_formulary)  AS "Formulary",
+  d.responsible_person                          AS "Responsible Person",
+  fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
 FROM d
 LEFT JOIN fm
   ON fm.product_line_id = d.product_line_id AND fm.rn = 1
@@ -79,7 +125,7 @@ ORDER BY 1;
 
 @st.cache_data
 def get_drugs():
-    sql = "SELECT DISTINCT name_a AS drug FROM dim_product_line ORDER BY 1"
+    sql = 'SELECT DISTINCT "name_a" AS drug FROM "dim_product_line" ORDER BY 1'
     return con.execute(sql).df()["drug"].tolist()
 
 @st.cache_data
@@ -107,20 +153,25 @@ def get_series(drug: str, merge_codes: bool):
         WHERE lower(d.name_a) = lower(?)
         ORDER BY 1, 2
         """
-        df = con.execute(sql, [drug]).df()
+        try:
+            df = con.execute(sql, [drug]).df()
+        except duckdb.BinderException:
+            # fallback if item_code_b doesn't exist
+            sql_fallback = sql.replace("d.item_code_b", "d.item_code")
+            df = con.execute(sql_fallback, [drug]).df()
     return df
 
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # Long series per item
+    # 1) Long series per item
     s = get_series(drug, merge_codes=False).copy()
     s["month"] = pd.to_datetime(s["month"], errors="coerce")
     s = s.dropna(subset=["month"])
 
-    # Month headers like "AEMP Aug 13"
+    # 2) Month headers like "AEMP Aug 13"
     s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
 
-    # Wide pivot for prices
+    # 3) Wide pivot for prices
     wide = (
         s.pivot_table(
             index="item_code",
@@ -132,13 +183,13 @@ def build_export_table(drug: str) -> pd.DataFrame:
         .rename(columns={"item_code": "Item Code"})
     )
 
-    # Left metadata (latest snapshot fields included)
-    meta = con.execute(meta_sql, [drug]).df()
+    # 4) Left metadata (latest snapshot fields included)
+    meta = con.execute(meta_sql, [drug]).df().drop_duplicates(subset=["Item Code"])
 
-    # Join meta + prices
+    # 5) Join meta + prices
     out = meta.merge(wide, on="Item Code", how="left")
 
-    # Fixed left columns (exact order) + months (chronological)
+    # 6) Fixed left columns (exact order) + months (chronological)
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
@@ -226,6 +277,7 @@ st.download_button(
     file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
     mime="text/csv",
 )
+
 
 
 
