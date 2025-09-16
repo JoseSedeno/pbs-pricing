@@ -32,16 +32,17 @@ def ensure_db() -> Path:
     if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
             # Make sure this Drive file is set to: Anyone with the link → Viewer
-            url = "https://drive.google.com/file/d/1tVpP0p3XdSPyzn_GEs6T_q7I1Zkk3Veb/view?usp=sharing"
-            gdown.download(url, str(db_path), quiet=False, fuzzy=True)
+            url = "https://drive.google.com/uc?id=1tVpP0p3XdSPyzn_GEs6T_q7I1Zkk3Veb&export=download"
+            gdown.download(url, str(db_path), quiet=False)
 
     st.caption(f"DB path: {db_path}")
     if not db_path.exists():
         st.error("Database file not found after download."); st.stop()
-
+        
+    min_bytes = 100 * 1024 * 1024  # 100 MB safety threshold
     size_bytes = db_path.stat().st_size
     st.caption(f"DB size: {size_bytes:,} bytes")
-    if size_bytes < 1024:
+    if size_bytes < min_bytes:
         st.error("Downloaded DB looks too small (likely failed download)."); st.stop()
     return db_path
 
