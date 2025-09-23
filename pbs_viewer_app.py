@@ -289,7 +289,7 @@ with st.sidebar:
         "ON to view a single continuous series."
     )
 
-# ---- Series & chart (uses Month → Identifier → AEMP) ----
+# ---- Series & chart (compare up to 3 identifiers + MoM stats) ----
 st.write(f"**Database:** `{DB_PATH}`")
 st.write(f"**Drug:** {drug}")
 
@@ -297,27 +297,33 @@ chart_df = build_chart_df(drug)
 if chart_df.empty:
     st.warning("No data for this selection."); st.stop()
 
-# ---- Time range (sidebar) ----
-min_month = chart_df["month"].min().to_pydatetime()
-max_month = chart_df["month"].max().to_pydatetime()
-
+# Time-range slider (uses chart_df to set bounds)
+min_m, max_m = chart_df["month"].min(), chart_df["month"].max()
 with st.sidebar:
-    st.markdown("---")
     st.subheader("Time range")
-    start_dt, end_dt = st.slider(
+    start_m, end_m = st.slider(
         "Select months",
-        min_value=min_month,
-        max_value=max_month,
-        value=(min_month, max_month),
+        min_value=min_m.to_pydatetime(),
+        max_value=max_m.to_pydatetime(),
+        value=(min_m.to_pydatetime(), max_m.to_pydatetime()),
         format="MMM YYYY",
     )
 
-# Filter chart data to selected range
-chart_df = chart_df[(chart_df["month"] >= start_dt) & (chart_df["month"] <= end_dt)]
-if chart_df.empty:
-    st.warning("No data in the selected time range."); st.stop()
+# Apply time filter
+mask = (chart_df["month"] >= pd.to_datetime(start_m)) & (chart_df["month"] <= pd.to_datetime(end_m))
+chart_df = chart_df.loc[mask].copy()
 
-# ---- Chart ----
+# Pick up to 3 identifiers to compare
+all_ids = sorted(chart_df["display_name"].unique().tolist())
+with st.sidebar:
+    st.subheader("Compare up to 3 products")
+    picked = st.multiselect("Identifiers", options=all_ids, default=[], max_selections=3)
+
+# If any picked, filter; otherwise show all
+if picked:
+    chart_df = chart_df[chart_df["display_name"].isin(picked)]
+
+# Build chart
 chart = (
     alt.Chart(chart_df.sort_values("month"))
     .mark_line(point=True)
@@ -334,8 +340,38 @@ chart = (
     .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
     .interactive(bind_x=True)
 )
-
 st.altair_chart(chart, use_container_width=True)
+
+# ---- Tiny stats: latest AEMP and MoM% for currently visible identifiers ----
+def latest_mom(df: pd.DataFrame) -> pd.DataFrame:
+    # expects filtered chart_df columns: month, display_name, aemp
+    out = []
+    for name, g in df.sort_values("month").groupby("display_name", as_index=False):
+        if g.shape[0] == 0:
+            continue
+        last = g.iloc[-1]
+        prev = g.iloc[-2] if g.shape[0] >= 2 else None
+        latest_val = float(last["aemp"]) if pd.notna(last["aemp"]) else None
+        prev_val = float(prev["aemp"]) if (prev is not None and pd.notna(prev["aemp"])) else None
+        if latest_val is not None and prev_val not in (None, 0):
+            mom = (latest_val - prev_val) / prev_val * 100.0
+        else:
+            mom = None
+        out.append(
+            {
+                "Identifier": name,
+                "Latest Month": last["month"].strftime("%b %Y"),
+                "AEMP (latest)": latest_val,
+                "AEMP (prev)": prev_val,
+                "MoM %": None if mom is None else round(mom, 2),
+            }
+        )
+    return pd.DataFrame(out)
+
+stats_df = latest_mom(chart_df)
+if not stats_df.empty:
+    st.markdown("#### Selected lines — latest & MoM")
+    st.dataframe(stats_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
