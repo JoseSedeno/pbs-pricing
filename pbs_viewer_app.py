@@ -220,6 +220,19 @@ def build_export_table(drug: str) -> pd.DataFrame:
 
     return out[[c for c in fixed if c in out.columns] + month_cols]
 
+# ---- Sidebar ----
+with st.sidebar:
+    st.subheader("Filters")
+    drugs = get_drugs()
+    if not drugs:
+        st.error("No drugs found in dim_product_line."); st.stop()
+    drug = st.selectbox("Legal Instrument Drug", drugs, index=0)
+    merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
+    st.caption(
+        "Tip: leave this OFF to see separate lines per Item Code, "
+        "ON to view a single continuous series."
+    )
+
 # ---- Debug: Responsible Person column check (temporary) ----
 st.markdown("### Debug: Responsible Person column check")
 with st.expander("Debug: find Responsible Person column (temporary)"):
@@ -237,20 +250,7 @@ with st.expander("Debug: find Responsible Person column (temporary)"):
         LIMIT 1
     """, [drug]).df().T
     st.write("One sample row from dim_product_line:", sample)
-
-# ---- Sidebar ----
-with st.sidebar:
-    st.subheader("Filters")
-    drugs = get_drugs()
-    if not drugs:
-        st.error("No drugs found in dim_product_line."); st.stop()
-    drug = st.selectbox("Legal Instrument Drug", drugs, index=0)
-    merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
-    st.caption(
-        "Tip: leave this OFF to see separate lines per Item Code, "
-        "ON to view a single continuous series."
-    )
-
+    
 # ---- Series & chart ----
 df = get_series(drug, merge)
 df["month"] = pd.to_datetime(df["month"], errors="coerce")
