@@ -76,9 +76,16 @@ fm_cols = table_columns("fact_monthly")
 # Safe selections for left metadata
 item_code_expr   = pick_col(d_cols, "item_code_b", "item_code")
 form_expr        = pick_col(d_cols, "attr_c", "attr_f", "variant_signature_base", default="NULL")
-resp_expr        = pick_col(d_cols, "responsible_person", "name_b", "resp_person", "contact_person", default="NULL")
+
 line_brand_expr  = pick_col(d_cols, "brand_name", default="NULL")
 line_formul_expr = pick_col(d_cols, "formulary", "attr_j", default="NULL")
+resp_expr = pick_col(
+    d_cols,
+    "sponsor", "responsible_person_name", "responsible_person",
+    "sponsor_name", "rp_name",
+    "name_b", "resp_person", "contact_person",
+    default="NULL"
+)
 
 # Latest snapshot fields from fact_monthly
 fm_brand_expr  = pick_col(fm_cols, "brand_name", default="NULL")
