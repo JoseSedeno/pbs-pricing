@@ -76,7 +76,6 @@ fm_cols = table_columns("fact_monthly")
 # Safe selections for left metadata
 item_code_expr   = pick_col(d_cols, "item_code_b", "item_code")
 form_expr        = pick_col(d_cols, "attr_c", "attr_f", "variant_signature_base", default="NULL")
-
 line_brand_expr  = pick_col(d_cols, "brand_name", default="NULL")
 line_formul_expr = pick_col(d_cols, "formulary", "attr_j", default="NULL")
 resp_expr = pick_col(
@@ -123,17 +122,16 @@ SELECT
   d.name_a                                      AS "Legal Instrument Drug",
   d.form_src                                    AS "Legal Instrument Form",
   COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST(d.line_brand AS VARCHAR))     AS "Brand Name",
-    CASE
+  CASE
     WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('1','F1')  THEN 'F1'
     WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('60','F2') THEN 'F2'
     WHEN UPPER(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR))) = 'CDL' THEN 'CDL'
     ELSE NULLIF(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)),'')
   END                                           AS "Formulary",
-
   COALESCE(
-  CAST(d.responsible_person AS VARCHAR),
-  CAST(fm.fm_responsible_person AS VARCHAR)
-) AS "Responsible Person",
+    CAST(d.responsible_person AS VARCHAR),
+    CAST(fm.fm_responsible_person AS VARCHAR)
+  )                                             AS "Responsible Person",
   fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
 FROM d
 LEFT JOIN fm
@@ -180,6 +178,7 @@ def get_series(drug: str, merge_codes: bool):
             df = con.execute(sql_fallback, [drug]).df()
     return df
 
+# ---- Wide table (unchanged) ----
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
     # 1) Long series per item
@@ -190,7 +189,7 @@ def build_export_table(drug: str) -> pd.DataFrame:
     # 2) Month headers like "AEMP Aug 13"
     s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
 
-    # 3) Wide pivot for prices
+    # 3) Wide pivot for prices (one row per Item Code; one column per month)
     wide = (
         s.pivot_table(
             index="item_code",
@@ -202,13 +201,17 @@ def build_export_table(drug: str) -> pd.DataFrame:
         .rename(columns={"item_code": "Item Code"})
     )
 
-    # 4) Left metadata (latest snapshot fields included)
-    meta = con.execute(meta_sql, [drug]).df().drop_duplicates(subset=["Item Code"])
+    # 4) Left metadata (latest snapshot fields included via meta_sql)
+    meta = (
+        con.execute(meta_sql, [drug])
+        .df()
+        .drop_duplicates(subset=["Item Code"])
+    )
 
     # 5) Join meta + prices
     out = meta.merge(wide, on="Item Code", how="left")
 
-    # 6) Fixed left columns (exact order) + months (chronological)
+    # 6) Fixed left columns (exact order) + month columns (chronological)
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
@@ -219,9 +222,59 @@ def build_export_table(drug: str) -> pd.DataFrame:
         "AMT Trade Product Pack",
     ]
     month_cols = [c for c in out.columns if c.startswith("AEMP ")]
-    month_cols = sorted(month_cols, key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y"))
+    month_cols = sorted(
+        month_cols,
+        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
+    )
 
     return out[[c for c in fixed if c in out.columns] + month_cols]
+
+# ---- Chart data from wide table (Month → Identifier → AEMP) ----
+@st.cache_data
+def build_chart_df(drug: str) -> pd.DataFrame:
+    """
+    Build a long dataframe for the chart with columns:
+    month (datetime), display_name (new identifier), aemp (float).
+    Uses the existing wide export table; does NOT change that table.
+    """
+    base = build_export_table(drug).copy()
+    if base.empty:
+        return base.assign(month=pd.NaT, display_name="", aemp=pd.NA).head(0)
+
+    # Helper for safe strings
+    def nz(col):
+        return col.astype(str).replace({"None": "", "nan": ""})
+
+    # New identifier = Item Code · Formulary · Brand Name · Legal Instrument Form · AMT Pack · Responsible Person
+    base["display_name"] = (
+        nz(base["Item Code"]) + " · " +
+        nz(base["Formulary"]) + " · " +
+        nz(base["Brand Name"]) + " · " +
+        nz(base["Legal Instrument Form"]) + " · " +
+        nz(base["AMT Trade Product Pack"]) + " · " +
+        nz(base["Responsible Person"])
+    ).str.replace(r"\s+·\s+$", "", regex=True)
+
+    # Unpivot month columns
+    month_cols = [c for c in base.columns if c.startswith("AEMP ")]
+    long_df = base.melt(
+        id_vars=["display_name"],
+        value_vars=month_cols,
+        var_name="month_label",
+        value_name="aemp",
+    )
+
+    # Parse "AEMP Aug 13" → datetime
+    long_df["month"] = pd.to_datetime(
+        long_df["month_label"].str.replace("AEMP ", "", regex=False),
+        format="%b %y",
+        errors="coerce"
+    )
+
+    # Clean & order columns EXACTLY as requested: Month → Identifier → AEMP
+    long_df = long_df.dropna(subset=["month"]).drop(columns=["month_label"])
+    long_df = long_df.sort_values(["display_name", "month"])
+    return long_df[["month", "display_name", "aemp"]]
 
 # ---- Sidebar ----
 with st.sidebar:
@@ -236,88 +289,38 @@ with st.sidebar:
         "ON to view a single continuous series."
     )
 
-# ---- Debug: Responsible Person column check (temporary) ----
-st.markdown("### Debug: Responsible Person column check")
-with st.expander("Debug: find Responsible Person column (temporary)"):
-    cols_df = con.execute("""
-        SELECT name
-        FROM pragma_table_info('dim_product_line')
-        ORDER BY name
-    """).df()
-    st.write("dim_product_line columns:", cols_df)
-
-    sample = con.execute("""
-        SELECT *
-        FROM dim_product_line
-        WHERE lower(name_a) = lower(?)
-        LIMIT 1
-    """, [drug]).df().T
-    st.write("One sample row from dim_product_line:", sample)
-    
-# Also show fact_monthly columns + one sample row for the same drug
-    fm_cols_df = con.execute("""
-        SELECT name
-        FROM pragma_table_info('fact_monthly')
-        ORDER BY name
-    """).df()
-    st.write("fact_monthly columns:", fm_cols_df)
-
-    fm_sample = con.execute("""
-        SELECT *
-        FROM fact_monthly f
-        JOIN dim_product_line d USING (product_line_id)
-        WHERE lower(d.name_a) = lower(?)
-        ORDER BY snapshot_date DESC
-        LIMIT 1
-    """, [drug]).df().T
-    st.write("One sample row from fact_monthly (joined):", fm_sample)
-
-# ---- Series & chart ----
-df = get_series(drug, merge)
-df["month"] = pd.to_datetime(df["month"], errors="coerce")
-df = df.sort_values("month")
-if df.empty:
-    st.warning("No data for this selection."); st.stop()
-
+# ---- Series & chart (uses Month → Identifier → AEMP) ----
 st.write(f"**Database:** `{DB_PATH}`")
 st.write(f"**Drug:** {drug}")
 
-if merge:
-    chart = (
-        alt.Chart(df)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
-            y=alt.Y("aemp:Q", title="AEMP"),
-            tooltip=[alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                     alt.Tooltip("aemp:Q", title="AEMP")],
-        )
-        .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
-        .interactive(bind_x=True)
+chart_df = build_chart_df(drug)
+if chart_df.empty:
+    st.warning("No data for this selection."); st.stop()
+
+chart = (
+    alt.Chart(chart_df.sort_values("month"))
+    .mark_line(point=True)
+    .encode(
+        x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
+        y=alt.Y("aemp:Q", title="AEMP"),
+        color=alt.Color("display_name:N", title="Identifier"),
+        tooltip=[
+            alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+            alt.Tooltip("display_name:N", title="Identifier"),
+            alt.Tooltip("aemp:Q", title="AEMP"),
+        ],
     )
-else:
-    chart = (
-        alt.Chart(df)
-        .mark_line(point=True)
-        .encode(
-            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
-            y=alt.Y("aemp:Q", title="AEMP"),
-            color=alt.Color("item_code:N", title="Item Code"),
-            tooltip=[alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                     alt.Tooltip("item_code:N", title="Item"),
-                     alt.Tooltip("aemp:Q", title="AEMP")],
-        )
-        .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
-        .interactive(bind_x=True)
-    )
+    .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
+    .interactive(bind_x=True)
+)
 
 st.altair_chart(chart, use_container_width=True)
 
-# ---- Small table under the chart ----
-df_small = df.copy()
-df_small["Month"] = pd.to_datetime(df_small["month"], errors="coerce").dt.strftime("%b %Y")
-small_cols = ["Month", "aemp"] if "item_code" not in df_small.columns else ["Month", "item_code", "aemp"]
-st.dataframe(df_small[small_cols], use_container_width=True)
+# ---- Small table under the chart (Month → Identifier → AEMP) ----
+st.dataframe(
+    chart_df.assign(Month=chart_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
+    use_container_width=True
+)
 
 # ---- Wide table & download ----
 st.markdown("### Item info + AEMP by month (wide)")
@@ -332,6 +335,7 @@ st.download_button(
     file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
     mime="text/csv",
 )
+
 
 
 
