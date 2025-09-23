@@ -91,6 +91,7 @@ resp_expr = pick_col(
 fm_brand_expr  = pick_col(fm_cols, "brand_name", default="NULL")
 fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
 fm_amt_expr    = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
+fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 meta_sql = f"""
@@ -111,6 +112,7 @@ fm AS (
     {fm_brand_expr}                             AS fm_brand_name,
     {fm_formul_expr}                            AS fm_formulary,
     {fm_amt_expr}                               AS fm_amt_trade_product_pack,
+    {fm_resp_expr}                              AS fm_responsible_person,
     ROW_NUMBER() OVER (
       PARTITION BY "product_line_id" ORDER BY "snapshot_date" DESC
     ) AS rn
@@ -122,15 +124,14 @@ SELECT
   d.form_src                                    AS "Legal Instrument Form",
   COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST(d.line_brand AS VARCHAR))     AS "Brand Name",
   COALESCE(
-  NULLIF(CAST(d.line_formulary AS VARCHAR), ''),
-  CASE
-    WHEN fm.fm_formulary IN (1, '1') THEN 'F1'
-    WHEN fm.fm_formulary IN (60, '60') THEN 'F2'
-    ELSE CAST(fm.fm_formulary AS VARCHAR)
-  END
-) AS "Formulary",
-
-  d.responsible_person                          AS "Responsible Person",
+    NULLIF(CAST(d.line_formulary AS VARCHAR), ''),
+    CASE
+      WHEN fm.fm_formulary IN (1, '1')  THEN 'F1'
+      WHEN fm.fm_formulary IN (60, '60') THEN 'F2'
+      ELSE CAST(fm.fm_formulary AS VARCHAR)
+    END
+  )                                             AS "Formulary",
+  COALESCE(d.responsible_person, fm.fm_responsible_person)                        AS "Responsible Person",
   fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
 FROM d
 LEFT JOIN fm
