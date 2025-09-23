@@ -131,7 +131,10 @@ SELECT
       ELSE CAST(fm.fm_formulary AS VARCHAR)
     END
   )                                             AS "Formulary",
-  COALESCE(d.responsible_person, fm.fm_responsible_person)                        AS "Responsible Person",
+  COALESCE(
+  CAST(d.responsible_person AS VARCHAR),
+  CAST(fm.fm_responsible_person AS VARCHAR)
+) AS "Responsible Person",
   fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
 FROM d
 LEFT JOIN fm
