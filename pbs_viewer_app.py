@@ -251,6 +251,24 @@ with st.expander("Debug: find Responsible Person column (temporary)"):
     """, [drug]).df().T
     st.write("One sample row from dim_product_line:", sample)
     
+# Also show fact_monthly columns + one sample row for the same drug
+    fm_cols_df = con.execute("""
+        SELECT name
+        FROM pragma_table_info('fact_monthly')
+        ORDER BY name
+    """).df()
+    st.write("fact_monthly columns:", fm_cols_df)
+
+    fm_sample = con.execute("""
+        SELECT *
+        FROM fact_monthly f
+        JOIN dim_product_line d USING (product_line_id)
+        WHERE lower(d.name_a) = lower(?)
+        ORDER BY snapshot_date DESC
+        LIMIT 1
+    """, [drug]).df().T
+    st.write("One sample row from fact_monthly (joined):", fm_sample)
+
 # ---- Series & chart ----
 df = get_series(drug, merge)
 df["month"] = pd.to_datetime(df["month"], errors="coerce")
