@@ -114,7 +114,15 @@ SELECT
   d.name_a                                      AS "Legal Instrument Drug",
   d.form_src                                    AS "Legal Instrument Form",
   COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST(d.line_brand AS VARCHAR))     AS "Brand Name",
-  COALESCE(NULLIF(CAST(d.line_formulary AS VARCHAR), ''), CAST(fm.fm_formulary AS VARCHAR)) AS "Formulary",
+  COALESCE(
+  NULLIF(CAST(d.line_formulary AS VARCHAR), ''),
+  CASE
+    WHEN fm.fm_formulary IN (1, '1') THEN 'F1'
+    WHEN fm.fm_formulary IN (60, '60') THEN 'F2'
+    ELSE CAST(fm.fm_formulary AS VARCHAR)
+  END
+) AS "Formulary",
+
   d.responsible_person                          AS "Responsible Person",
   fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
 FROM d
