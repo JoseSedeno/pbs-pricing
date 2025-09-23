@@ -297,6 +297,27 @@ chart_df = build_chart_df(drug)
 if chart_df.empty:
     st.warning("No data for this selection."); st.stop()
 
+# ---- Time range (sidebar) ----
+min_month = chart_df["month"].min().to_pydatetime()
+max_month = chart_df["month"].max().to_pydatetime()
+
+with st.sidebar:
+    st.markdown("---")
+    st.subheader("Time range")
+    start_dt, end_dt = st.slider(
+        "Select months",
+        min_value=min_month,
+        max_value=max_month,
+        value=(min_month, max_month),
+        format="MMM YYYY",
+    )
+
+# Filter chart data to selected range
+chart_df = chart_df[(chart_df["month"] >= start_dt) & (chart_df["month"] <= end_dt)]
+if chart_df.empty:
+    st.warning("No data in the selected time range."); st.stop()
+
+# ---- Chart ----
 chart = (
     alt.Chart(chart_df.sort_values("month"))
     .mark_line(point=True)
