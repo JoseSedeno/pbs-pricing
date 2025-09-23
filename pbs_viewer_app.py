@@ -213,6 +213,24 @@ def build_export_table(drug: str) -> pd.DataFrame:
 
     return out[[c for c in fixed if c in out.columns] + month_cols]
 
+# ---- Debug: Responsible Person column check (temporary) ----
+st.markdown("### Debug: Responsible Person column check")
+with st.expander("Debug: find Responsible Person column (temporary)"):
+    cols_df = con.execute("""
+        SELECT name
+        FROM pragma_table_info('dim_product_line')
+        ORDER BY name
+    """).df()
+    st.write("dim_product_line columns:", cols_df)
+
+    sample = con.execute("""
+        SELECT *
+        FROM dim_product_line
+        WHERE lower(name_a) = lower(?)
+        LIMIT 1
+    """, [drug]).df().T
+    st.write("One sample row from dim_product_line:", sample)
+
 # ---- Sidebar ----
 with st.sidebar:
     st.subheader("Filters")
