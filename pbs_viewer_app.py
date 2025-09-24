@@ -291,14 +291,6 @@ with st.sidebar:
         max_selections=3
     )
 
-    # Keep (even if chart path doesn’t use merge)
-    merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
-
-    st.caption(
-        "Pick 1–3 drugs to combine on the chart. "
-        "The wide table/export uses the first selected drug."
-    )
-
 # ---- Series & chart (compare across multiple drugs) ----
 st.write(f"**Database:** `{DB_PATH}`")
 
