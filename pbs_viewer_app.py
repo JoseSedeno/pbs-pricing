@@ -409,7 +409,7 @@ st.dataframe(
     use_container_width=True
 )
 
-# ---- Wide table & download ----
+# ---- Wide table & download (respects time range; drop empty rows) ----
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 
@@ -418,16 +418,49 @@ export_base = selected_drugs[0] if selected_drugs else None
 if not export_base:
     st.warning("Pick at least one drug to show the wide table/export."); st.stop()
 
+# Full wide table
 export_df = build_export_table(export_base)
-st.dataframe(export_df, use_container_width=True)
 
-export_csv = export_df.to_csv(index=False).encode("utf-8")
+# Build list of month columns within the slider range
+start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
+end_dt   = pd.to_datetime(end_m).to_period("M").to_timestamp()
+
+def _col_to_month(col: str) -> pd.Timestamp:
+    return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
+
+month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
+kept_month_cols = [c for c in month_cols_all
+                   if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
+
+# Keep only rows with at least one value in-range
+fixed_cols = [
+    "Item Code",
+    "Legal Instrument Drug",
+    "Legal Instrument Form",
+    "Brand Name",
+    "Formulary",
+    "Responsible Person",
+    "AMT Trade Product Pack",
+]
+
+if kept_month_cols:
+    nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
+    filtered_df = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
+else:
+    filtered_df = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
+
+st.dataframe(filtered_df, use_container_width=True)
+
+# Download button (filename includes the range)
+file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
+export_csv = filtered_df.to_csv(index=False).encode("utf-8")
 st.download_button(
     label=f"Download AEMP wide CSV — {export_base}",
     data=export_csv,
-    file_name=f"{export_base.replace(' ','_').lower()}_aemp_wide.csv",
+    file_name=f"{export_base.replace(' ','_').lower()}_{file_range}_aemp_wide.csv",
     mime="text/csv",
 )
+
 
 
 
