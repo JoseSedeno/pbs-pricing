@@ -279,23 +279,51 @@ def build_chart_df(drug: str) -> pd.DataFrame:
 # ---- Sidebar ----
 with st.sidebar:
     st.subheader("Filters")
-    drugs = get_drugs()
-    if not drugs:
+    all_drugs = get_drugs()
+    if not all_drugs:
         st.error("No drugs found in dim_product_line."); st.stop()
-    drug = st.selectbox("Legal Instrument Drug", drugs, index=0)
-    merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
-    st.caption(
-        "Tip: leave this OFF to see separate lines per Item Code, "
-        "ON to view a single continuous series."
+
+    # Multi-select up to 3 medicines
+    selected_drugs = st.multiselect(
+        "Legal Instrument Drug(s)",
+        options=all_drugs,
+        default=all_drugs[:1],
+        max_selections=3
     )
 
-# ---- Series & chart (compare up to 3 identifiers + MoM stats) ----
-st.write(f"**Database:** `{DB_PATH}`")
-st.write(f"**Drug:** {drug}")
+    # Keep (even if chart path doesn’t use merge)
+    merge = st.checkbox("Merge Item Codes (treat as single product)", value=False)
 
-chart_df = build_chart_df(drug)
+    st.caption(
+        "Pick 1–3 drugs to combine on the chart. "
+        "The wide table/export uses the first selected drug."
+    )
+
+# ---- Series & chart (compare across multiple drugs) ----
+st.write(f"**Database:** `{DB_PATH}`")
+
+# Build one long table across the selected drugs
+frames = []
+for d in (selected_drugs or []):
+    df_d = build_chart_df(d)
+    if not df_d.empty:
+        df_d = df_d.copy()
+        # Prefix identifier so the source drug is clear
+        df_d["display_name"] = f"{d} · " + df_d["display_name"]
+        df_d["__drug__"] = d
+        frames.append(df_d)
+
+if frames:
+    chart_df = pd.concat(frames, ignore_index=True)
+else:
+    chart_df = pd.DataFrame(columns=["month", "display_name", "aemp", "__drug__"])
+
+# Show which drugs are included
+title_drug = ", ".join(selected_drugs) if selected_drugs else "(none)"
+st.write(f"**Drug(s):** {title_drug}")
+
 if chart_df.empty:
-    st.warning("No data for this selection."); st.stop()
+    st.warning("No data for the selected drug(s)."); st.stop()
 
 # Time-range slider (uses chart_df to set bounds)
 min_m, max_m = chart_df["month"].min(), chart_df["month"].max()
@@ -382,16 +410,23 @@ st.dataframe(
 # ---- Wide table & download ----
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
-export_df = build_export_table(drug)
+
+# Use the first selected drug for the wide table/export
+export_base = selected_drugs[0] if selected_drugs else None
+if not export_base:
+    st.warning("Pick at least one drug to show the wide table/export."); st.stop()
+
+export_df = build_export_table(export_base)
 st.dataframe(export_df, use_container_width=True)
 
 export_csv = export_df.to_csv(index=False).encode("utf-8")
 st.download_button(
-    label=f"Download AEMP wide CSV — {drug}",
+    label=f"Download AEMP wide CSV — {export_base}",
     data=export_csv,
-    file_name=f"{drug.replace(' ','_').lower()}_aemp_wide.csv",
+    file_name=f"{export_base.replace(' ','_').lower()}_aemp_wide.csv",
     mime="text/csv",
 )
+
 
 
 
