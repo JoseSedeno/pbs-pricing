@@ -365,9 +365,11 @@ chart = (
             alt.Tooltip("aemp:Q", title="AEMP"),
         ],
     )
-    .properties(height=450, title=alt.TitleParams(f"{drug} — AEMP by month", anchor="start"))
+    # ✅ show all selected drugs in the title
+    .properties(height=450, title=alt.TitleParams(f"{title_drug} — AEMP by month", anchor="start"))
     .interactive(bind_x=True)
 )
+
 st.altair_chart(chart, use_container_width=True)
 
 # ---- Tiny stats: latest AEMP and MoM% for currently visible identifiers ----
