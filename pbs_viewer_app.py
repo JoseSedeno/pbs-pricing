@@ -372,37 +372,6 @@ chart = (
 
 st.altair_chart(chart, use_container_width=True)
 
-# ---- Tiny stats: latest AEMP and MoM% for currently visible identifiers ----
-def latest_mom(df: pd.DataFrame) -> pd.DataFrame:
-    # expects filtered chart_df columns: month, display_name, aemp
-    out = []
-    for name, g in df.sort_values("month").groupby("display_name", as_index=False):
-        if g.shape[0] == 0:
-            continue
-        last = g.iloc[-1]
-        prev = g.iloc[-2] if g.shape[0] >= 2 else None
-        latest_val = float(last["aemp"]) if pd.notna(last["aemp"]) else None
-        prev_val = float(prev["aemp"]) if (prev is not None and pd.notna(prev["aemp"])) else None
-        if latest_val is not None and prev_val not in (None, 0):
-            mom = (latest_val - prev_val) / prev_val * 100.0
-        else:
-            mom = None
-        out.append(
-            {
-                "Identifier": name,
-                "Latest Month": last["month"].strftime("%b %Y"),
-                "AEMP (latest)": latest_val,
-                "AEMP (prev)": prev_val,
-                "MoM %": None if mom is None else round(mom, 2),
-            }
-        )
-    return pd.DataFrame(out)
-
-stats_df = latest_mom(chart_df)
-if not stats_df.empty:
-    st.markdown("#### Selected lines — latest & MoM")
-    st.dataframe(stats_df, use_container_width=True)
-
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
     chart_df.assign(Month=chart_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
