@@ -337,23 +337,23 @@ with st.sidebar:
         format="MMM YYYY",
     )
 
-# Apply time filter
+# ---- Apply time filter to the combined chart data ----
 mask = (chart_df["month"] >= pd.to_datetime(start_m)) & (chart_df["month"] <= pd.to_datetime(end_m))
 chart_df = chart_df.loc[mask].copy()
 
-# Pick up to 3 identifiers to compare
+# ---- Identifier picker (no hard cap) ----
 all_ids = sorted(chart_df["display_name"].unique().tolist())
 with st.sidebar:
-    st.subheader("Compare up to 3 products")
-    picked = st.multiselect("Identifiers", options=all_ids, default=[], max_selections=3)
+    st.subheader("Compare products")
+    select_all = st.checkbox("Select all identifiers", value=False)
+    picked = st.multiselect("Identifiers", options=all_ids, default=[])
 
-# If any picked, filter; otherwise show all
-if picked:
-    chart_df = chart_df[chart_df["display_name"].isin(picked)]
+# If 'Select all' is on (or nothing picked), show everything
+filtered_df = chart_df if (select_all or not picked) else chart_df[chart_df["display_name"].isin(picked)]
 
-# Build chart
+# ---- Chart ----
 chart = (
-    alt.Chart(chart_df.sort_values("month"))
+    alt.Chart(filtered_df.sort_values("month"))
     .mark_line(point=True)
     .encode(
         x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
@@ -365,20 +365,18 @@ chart = (
             alt.Tooltip("aemp:Q", title="AEMP"),
         ],
     )
-    # ✅ show all selected drugs in the title
     .properties(height=450, title=alt.TitleParams(f"{title_drug} — AEMP by month", anchor="start"))
     .interactive(bind_x=True)
 )
-
 st.altair_chart(chart, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
-    chart_df.assign(Month=chart_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
+    filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
     use_container_width=True
 )
 
-# ---- Wide table & download (respects time range; drop empty rows) ----
+# ---- Wide table & download (respects time range; drops empty rows) ----
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 
@@ -387,10 +385,10 @@ export_base = selected_drugs[0] if selected_drugs else None
 if not export_base:
     st.warning("Pick at least one drug to show the wide table/export."); st.stop()
 
-# Full wide table
+# Full wide table for that drug
 export_df = build_export_table(export_base)
 
-# Build list of month columns within the slider range
+# Month columns within the slider range
 start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
 end_dt   = pd.to_datetime(end_m).to_period("M").to_timestamp()
 
@@ -398,10 +396,9 @@ def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
 
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-kept_month_cols = [c for c in month_cols_all
-                   if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
+kept_month_cols = [c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
 
-# Keep only rows with at least one value in-range
+# Keep only rows with at least one non-null value in the kept months
 fixed_cols = [
     "Item Code",
     "Legal Instrument Drug",
@@ -414,26 +411,19 @@ fixed_cols = [
 
 if kept_month_cols:
     nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
-    filtered_df = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
+    filtered_wide = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
 else:
-    filtered_df = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
+    # No months in range → show just headers (empty frame)
+    filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
-st.dataframe(filtered_df, use_container_width=True)
+st.dataframe(filtered_wide, use_container_width=True)
 
-# Download button (filename includes the range)
+# Download button (filename includes the selected range)
 file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
-export_csv = filtered_df.to_csv(index=False).encode("utf-8")
+export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
 st.download_button(
     label=f"Download AEMP wide CSV — {export_base}",
     data=export_csv,
     file_name=f"{export_base.replace(' ','_').lower()}_{file_range}_aemp_wide.csv",
     mime="text/csv",
 )
-
-
-
-
-
-
-
-
