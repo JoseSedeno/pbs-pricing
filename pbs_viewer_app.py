@@ -27,6 +27,7 @@ def show_month_to_month_increases(con):
     latest = months[-1]
     prev = months[-2] if len(months) >= 2 else months[-1]
 
+    # Default to latest two months but allow manual selection
     mode = st.radio(
         "Comparison range",
         ("Latest two months", "Pick months"),
@@ -59,18 +60,19 @@ def show_month_to_month_increases(con):
         st.warning("End month must be after start month.")
         return
 
-    # Compare AEMP between the two months using snapshot_date
-    sql = """
+    # Compare AEMP between the two months (schema-safe join to dim_product_line)
+    sql = f"""
         SELECT
-            item_code,
-            legal_instrument_drug AS drug,
-            legal_instrument_form AS form,
-            brand_name,
-            responsible_person,
-            SUM(CASE WHEN snapshot_date::DATE = ? THEN aemp END) AS aemp_start,
-            SUM(CASE WHEN snapshot_date::DATE = ? THEN aemp END) AS aemp_end
-        FROM fact_monthly
-        WHERE snapshot_date::DATE IN (?, ?)
+            d.{item_code_expr}                                                        AS item_code,
+            d.name_a                                                                   AS legal_instrument_drug,
+            d.{form_expr}                                                              AS legal_instrument_form,
+            COALESCE(CAST(f.{fm_brand_expr} AS VARCHAR), CAST(d.{line_brand_expr} AS VARCHAR))      AS brand_name,
+            COALESCE(CAST(f.{fm_resp_expr}  AS VARCHAR), CAST(d.{resp_expr}       AS VARCHAR))      AS responsible_person,
+            SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_start,
+            SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_end
+        FROM fact_monthly f
+        JOIN dim_product_line d USING (product_line_id)
+        WHERE f.snapshot_date::DATE IN (?, ?)
         GROUP BY 1,2,3,4,5
         HAVING aemp_start IS NOT NULL
            AND aemp_end   IS NOT NULL
@@ -101,8 +103,8 @@ def show_month_to_month_increases(con):
     df = df[
         [
             "item_code",
-            "drug",
-            "form",
+            "legal_instrument_drug",
+            "legal_instrument_form",
             "brand_name",
             "responsible_person",
             "aemp_start",
@@ -124,7 +126,9 @@ def show_month_to_month_increases(con):
 
     # Pretty percent for on-screen table only; keep CSV numeric
     df_display = df.copy()
-    df_display["pct_change"] = df_display["pct_change"].map(lambda x: f"{x:.2f}%")
+    df_display["pct_change"] = df_display["pct_change"].apply(
+        lambda x: f"{x:.2f}%" if pd.notnull(x) else ""
+    )
 
     st.caption(f"Showing increases from {nice_start} to {nice_end}.")
     st.dataframe(df_display, use_container_width=True)
