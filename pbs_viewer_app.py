@@ -1,10 +1,140 @@
 import os
 from pathlib import Path
 
+import duckdb
+import pandas as pd
 import streamlit as st
-import duckdb, pandas as pd
 import altair as alt
 import gdown
+
+def show_month_to_month_increases(con):
+    st.divider()
+    st.subheader("Month to month price increases")
+
+    # Get available months from fact_monthly using snapshot_date
+    months = (
+        con.execute("""
+            SELECT DISTINCT snapshot_date::DATE AS month
+            FROM fact_monthly
+            WHERE aemp IS NOT NULL
+            ORDER BY 1
+        """).df()["month"].tolist()
+    )
+    if not months:
+        st.info("No months available in the database.")
+        return
+
+    latest = months[-1]
+    prev = months[-2] if len(months) >= 2 else months[-1]
+
+    mode = st.radio(
+        "Comparison range",
+        ("Latest two months", "Pick months"),
+        horizontal=True,
+        key="mom_mode",
+    )
+
+    if mode == "Pick months":
+        col_a, col_b = st.columns(2)
+        with col_a:
+            start_month = st.selectbox(
+                "Start month",
+                months,
+                index=max(len(months) - 2, 0),
+                format_func=lambda d: pd.to_datetime(d).strftime("%b %Y"),
+                key="mom_start",
+            )
+        with col_b:
+            end_month = st.selectbox(
+                "End month",
+                months,
+                index=len(months) - 1,
+                format_func=lambda d: pd.to_datetime(d).strftime("%b %Y"),
+                key="mom_end",
+            )
+    else:
+        start_month, end_month = prev, latest
+
+    if pd.to_datetime(start_month) >= pd.to_datetime(end_month):
+        st.warning("End month must be after start month.")
+        return
+
+    # Compare AEMP between the two months using snapshot_date
+    sql = """
+        SELECT
+            item_code,
+            legal_instrument_drug AS drug,
+            legal_instrument_form AS form,
+            brand_name,
+            responsible_person,
+            SUM(CASE WHEN snapshot_date::DATE = ? THEN aemp END) AS aemp_start,
+            SUM(CASE WHEN snapshot_date::DATE = ? THEN aemp END) AS aemp_end
+        FROM fact_monthly
+        WHERE snapshot_date::DATE IN (?, ?)
+        GROUP BY 1,2,3,4,5
+        HAVING aemp_start IS NOT NULL
+           AND aemp_end   IS NOT NULL
+           AND aemp_end > aemp_start
+        ORDER BY (aemp_end - aemp_start) DESC
+    """
+    df = con.execute(sql, [start_month, end_month, start_month, end_month]).df()
+
+    nice_start = pd.to_datetime(start_month).strftime("%b %Y")
+    nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
+
+    # Dynamic title for the exact range
+    st.header(f"AEMP price increases: {nice_start} to {nice_end}")
+
+    if df.empty:
+        st.info(f"No increases found between {nice_start} and {nice_end}.")
+        return
+
+    # Compute deltas and round for display/CSV
+    df["abs_change"] = (df["aemp_end"] - df["aemp_start"]).round(2)
+    df["pct_change"] = (
+        ((df["aemp_end"] - df["aemp_start"]) / df["aemp_start"]) * 100
+    ).round(2)
+    df["aemp_start"] = df["aemp_start"].round(2)
+    df["aemp_end"]   = df["aemp_end"].round(2)
+
+    # Final column order
+    df = df[
+        [
+            "item_code",
+            "drug",
+            "form",
+            "brand_name",
+            "responsible_person",
+            "aemp_start",
+            "aemp_end",
+            "abs_change",
+            "pct_change",
+        ]
+    ]
+
+    # Quick summary metrics (screen only)
+    items_count = len(df)
+    largest_inc = float(df["abs_change"].max())
+    median_inc  = float(df["abs_change"].median())
+    total_inc   = float(df["abs_change"].sum())
+    st.caption(
+        f"Summary: {items_count} items increased. "
+        f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
+    )
+
+    # Pretty percent for on-screen table only; keep CSV numeric
+    df_display = df.copy()
+    df_display["pct_change"] = df_display["pct_change"].map(lambda x: f"{x:.2f}%")
+
+    st.caption(f"Showing increases from {nice_start} to {nice_end}.")
+    st.dataframe(df_display, use_container_width=True)
+
+    st.download_button(
+        f"Download CSV: increases {nice_start} to {nice_end}",
+        df.to_csv(index=False).encode("utf-8"),
+        file_name=f"aemp_increases_{pd.to_datetime(start_month).strftime('%Y-%m')}_to_{pd.to_datetime(end_month).strftime('%Y-%m')}.csv",
+        mime="text/csv",
+    )
 
 # ---- Page setup ----
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
@@ -357,10 +487,9 @@ chart = (
             alt.Tooltip("aemp:Q", title="AEMP"),
         ],
     )
-    .properties(height=450, title=alt.TitleParams(f"{title_drug} — AEMP by month", anchor="start"))
+    .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
     .interactive(bind_x=True)
 )
-st.altair_chart(chart, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
@@ -414,8 +543,11 @@ st.dataframe(filtered_wide, use_container_width=True)
 file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
 export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
 st.download_button(
-    label=f"Download AEMP wide CSV — {export_base}",
+    label=f"Download AEMP wide CSV: {export_base}",
     data=export_csv,
     file_name=f"{export_base.replace(' ','_').lower()}_{file_range}_aemp_wide.csv",
     mime="text/csv",
 )
+
+# Month to month price increase report
+show_month_to_month_increases(con)
