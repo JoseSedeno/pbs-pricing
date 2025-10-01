@@ -238,6 +238,9 @@ fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
 fm_amt_expr    = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
 fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
 
+# --- Always-on, database-wide month-to-month increases (shown near top) ---
+show_month_to_month_increases(con)
+
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 meta_sql = f"""
 WITH d AS (
@@ -455,6 +458,11 @@ if frames:
     chart_df = pd.concat(frames, ignore_index=True)
 else:
     chart_df = pd.DataFrame(columns=["month", "display_name", "aemp", "__drug__"])
+    
+# Ensure clean data for chart
+chart_df["month"] = pd.to_datetime(chart_df["month"], errors="coerce")
+chart_df["aemp"]  = pd.to_numeric(chart_df["aemp"], errors="coerce")
+chart_df = chart_df.dropna(subset=["month", "aemp"]).reset_index(drop=True)
 
 # Show which drugs are included
 title_drug = ", ".join(selected_drugs) if selected_drugs else "(none)"
@@ -490,22 +498,26 @@ with st.sidebar:
 filtered_df = chart_df if (select_all or not picked) else chart_df[chart_df["display_name"].isin(picked)]
 
 # ---- Chart ----
-chart = (
-    alt.Chart(filtered_df.sort_values("month"))
-    .mark_line(point=True)
-    .encode(
-        x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
-        y=alt.Y("aemp:Q", title="AEMP"),
-        color=alt.Color("display_name:N", title="Identifier"),
-        tooltip=[
-            alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-            alt.Tooltip("display_name:N", title="Identifier"),
-            alt.Tooltip("aemp:Q", title="AEMP"),
-        ],
+if filtered_df.empty:
+    st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
+else:
+    chart = (
+        alt.Chart(filtered_df.sort_values("month"))
+        .mark_line(point=True)
+        .encode(
+            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
+            y=alt.Y("aemp:Q", title="AEMP"),
+            color=alt.Color("display_name:N", title="Identifier"),
+            tooltip=[
+                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                alt.Tooltip("display_name:N", title="Identifier"),
+                alt.Tooltip("aemp:Q", title="AEMP"),
+            ],
+        )
+        .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
+        .interactive(bind_x=True)
     )
-    .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
-    .interactive(bind_x=True)
-)
+    st.altair_chart(chart, use_container_width=True)  # <-- this actually renders the chart
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
@@ -564,6 +576,3 @@ st.download_button(
     file_name=f"{export_base.replace(' ','_').lower()}_{file_range}_aemp_wide.csv",
     mime="text/csv",
 )
-
-# Month to month price increase report
-show_month_to_month_increases(con)
