@@ -131,18 +131,18 @@ def show_month_to_month_increases(con):
     largest_inc = float(df["abs_change"].max())
     median_inc  = float(df["abs_change"].median())
     total_inc   = float(df["abs_change"].sum())
-    st.caption(
-        f"Summary: {items_count} items increased. "
-        f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
+    st.write(
+    f"Summary: {items_count} items increased. "
+    f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
     )
-
+    
     # Pretty percent for on-screen table only; keep CSV numeric
     df_display = df.copy()
     df_display["pct_change"] = df_display["pct_change"].apply(
         lambda x: f"{x:.2f}%" if pd.notnull(x) else ""
     )
 
-    st.caption(f"Showing increases from {nice_start} to {nice_end}.")
+    st.write(f"Showing increases from {nice_start} to {nice_end}.")
     st.dataframe(df_display, use_container_width=True)
 
     st.download_button(
