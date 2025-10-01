@@ -11,6 +11,10 @@ def show_month_to_month_increases(con):
     st.divider()
     st.subheader("Month to month price increases")
 
+    # Local helper: only prefix with alias if it's a real column, not the literal NULL
+    def _qualify(expr: str, alias: str) -> str:
+        return f"{alias}.{expr}" if expr and expr.strip().upper() != "NULL" else "NULL"
+
     # Get available months from fact_monthly using snapshot_date
     months = (
         con.execute("""
@@ -60,14 +64,22 @@ def show_month_to_month_increases(con):
         st.warning("End month must be after start month.")
         return
 
+    # Build safe column refs using your schema-adapted expressions defined earlier
+    item_code_sql  = _qualify(item_code_expr,  "d")
+    form_sql       = _qualify(form_expr,       "d")
+    fm_brand_sql   = _qualify(fm_brand_expr,   "f")
+    line_brand_sql = _qualify(line_brand_expr, "d")
+    fm_resp_sql    = _qualify(fm_resp_expr,    "f")
+    resp_sql       = _qualify(resp_expr,       "d")
+
     # Compare AEMP between the two months (schema-safe join to dim_product_line)
     sql = f"""
         SELECT
-            d.{item_code_expr}                                                        AS item_code,
-            d.name_a                                                                   AS legal_instrument_drug,
-            d.{form_expr}                                                              AS legal_instrument_form,
-            COALESCE(CAST(f.{fm_brand_expr} AS VARCHAR), CAST(d.{line_brand_expr} AS VARCHAR))      AS brand_name,
-            COALESCE(CAST(f.{fm_resp_expr}  AS VARCHAR), CAST(d.{resp_expr}       AS VARCHAR))      AS responsible_person,
+            {item_code_sql}                                                            AS item_code,
+            d.name_a                                                                    AS legal_instrument_drug,
+            {form_sql}                                                                  AS legal_instrument_form,
+            COALESCE(CAST({fm_brand_sql} AS VARCHAR), CAST({line_brand_sql} AS VARCHAR)) AS brand_name,
+            COALESCE(CAST({fm_resp_sql}  AS VARCHAR), CAST({resp_sql}       AS VARCHAR)) AS responsible_person,
             SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_start,
             SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_end
         FROM fact_monthly f
