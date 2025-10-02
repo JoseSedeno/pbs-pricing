@@ -8,7 +8,6 @@ import altair as alt
 import gdown
 
 def show_month_to_month_increases(con):
-    st.divider()
     st.subheader("Month to month price increases")
 
     # Local helper: only prefix with alias if it's a real column, not the literal NULL
