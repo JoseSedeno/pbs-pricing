@@ -8,8 +8,6 @@ import altair as alt
 import gdown
 
 def show_month_to_month_increases(con):
-    st.subheader("Month to month price increases")
-
     # Local helper: only prefix with alias if it's a real column, not the literal NULL
     def _qualify(expr: str, alias: str) -> str:
         return f"{alias}.{expr}" if expr and expr.strip().upper() != "NULL" else "NULL"
@@ -95,8 +93,8 @@ def show_month_to_month_increases(con):
     nice_start = pd.to_datetime(start_month).strftime("%b %Y")
     nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
 
-    # Dynamic title for the exact range
-    st.header(f"AEMP price increases: {nice_start} to {nice_end}")
+    # Section title (match the H3 style used elsewhere)
+    st.markdown(f"### AEMP price increases: {nice_start} to {nice_end}")
 
     if df.empty:
         st.info(f"No increases found between {nice_start} and {nice_end}.")
@@ -125,16 +123,16 @@ def show_month_to_month_increases(con):
         ]
     ]
 
-    # Quick summary metrics (screen only)
+    # Summary (plain body text, no italics, consistent size)
     items_count = len(df)
     largest_inc = float(df["abs_change"].max())
     median_inc  = float(df["abs_change"].median())
     total_inc   = float(df["abs_change"].sum())
     st.write(
-    f"Summary: {items_count} items increased. "
-    f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
+        f"Summary: {items_count} items increased. "
+        f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
     )
-    
+
     # Pretty percent for on-screen table only; keep CSV numeric
     df_display = df.copy()
     df_display["pct_change"] = df_display["pct_change"].apply(
