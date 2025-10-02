@@ -123,7 +123,7 @@ def show_month_to_month_increases(con):
         ]
     ]
 
-    # Summary (plain body text, no italics, consistent size)
+    # Summary (plain body text, no italics/caption; consistent size)
     items_count = len(df)
     largest_inc = float(df["abs_change"].max())
     median_inc  = float(df["abs_change"].median())
