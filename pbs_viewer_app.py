@@ -8,6 +8,12 @@ import altair as alt
 import gdown
 
 def show_month_to_month_increases(con):
+    # ---- Gate the whole section behind a sidebar toggle ----
+    with st.sidebar:
+        show_mom = st.toggle("Show month-to-month price increases", value=False, key="mom_show")
+    if not show_mom:
+        return
+
     # Local helper: only prefix with alias if it's a real column, not the literal NULL
     def _qualify(expr: str, alias: str) -> str:
         return f"{alias}.{expr}" if expr and expr.strip().upper() != "NULL" else "NULL"
@@ -93,7 +99,7 @@ def show_month_to_month_increases(con):
     nice_start = pd.to_datetime(start_month).strftime("%b %Y")
     nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
 
-    # Section title (match the H3 style used elsewhere)
+    # Section title (only shown when toggle is ON)
     st.markdown(f"### AEMP price increases: {nice_start} to {nice_end}")
 
     if df.empty:
@@ -123,12 +129,12 @@ def show_month_to_month_increases(con):
         ]
     ]
 
-    # Summary (plain body text, no italics/caption; consistent size)
+    # Summary (plain text to match app body style)
     items_count = len(df)
     largest_inc = float(df["abs_change"].max())
     median_inc  = float(df["abs_change"].median())
     total_inc   = float(df["abs_change"].sum())
-    st.write(
+    st.text(
         f"Summary: {items_count} items increased. "
         f"Largest +${largest_inc:,.2f}, median +${median_inc:,.2f}, total +${total_inc:,.2f}."
     )
@@ -139,7 +145,7 @@ def show_month_to_month_increases(con):
         lambda x: f"{x:.2f}%" if pd.notnull(x) else ""
     )
 
-    st.write(f"Showing increases from {nice_start} to {nice_end}.")
+    st.text(f"Showing increases from {nice_start} to {nice_end}.")
     st.dataframe(df_display, use_container_width=True)
 
     st.download_button(
