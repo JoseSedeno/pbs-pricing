@@ -155,6 +155,161 @@ def show_month_to_month_increases(con):
         mime="text/csv",
     )
 
+# ---------------- Month-to-month DECREASES ----------------
+def show_month_to_month_decreases(con):
+    # Gate the whole section behind a sidebar toggle
+    with st.sidebar:
+        show_mom_dec = st.toggle(
+            "Show month-to-month price decreases",
+            value=False,
+            key="momd_show",
+        )
+    if not show_mom_dec:
+        return
+
+    # Helper: only prefix with alias if it's a real column (not literal NULL)
+    def _qualify(expr: str, alias: str) -> str:
+        return f"{alias}.{expr}" if expr and expr.strip().upper() != "NULL" else "NULL"
+
+    # Available months
+    months = (
+        con.execute("""
+            SELECT DISTINCT snapshot_date::DATE AS month
+            FROM fact_monthly
+            WHERE aemp IS NOT NULL
+            ORDER BY 1
+        """).df()["month"].tolist()
+    )
+    if not months:
+        st.info("No months available in the database.")
+        return
+
+    latest = months[-1]
+    prev = months[-2] if len(months) >= 2 else months[-1]
+
+    # Month picker (keys distinct from the increases section)
+    mode = st.radio(
+        "Comparison range",
+        ("Latest two months", "Pick months"),
+        horizontal=True,
+        key="momd_mode",
+    )
+    if mode == "Pick months":
+        col_a, col_b = st.columns(2)
+        with col_a:
+            start_month = st.selectbox(
+                "Start month",
+                months,
+                index=max(len(months) - 2, 0),
+                format_func=lambda d: pd.to_datetime(d).strftime("%b %Y"),
+                key="momd_start",
+            )
+        with col_b:
+            end_month = st.selectbox(
+                "End month",
+                months,
+                index=len(months) - 1,
+                format_func=lambda d: pd.to_datetime(d).strftime("%b %Y"),
+                key="momd_end",
+            )
+    else:
+        start_month, end_month = prev, latest
+
+    if pd.to_datetime(start_month) >= pd.to_datetime(end_month):
+        st.warning("End month must be after start month.")
+        return
+
+    # Schema-safe refs
+    item_code_sql  = _qualify(item_code_expr,  "d")
+    form_sql       = _qualify(form_expr,       "d")
+    fm_brand_sql   = _qualify(fm_brand_expr,   "f")
+    line_brand_sql = _qualify(line_brand_expr, "d")
+    fm_resp_sql    = _qualify(fm_resp_expr,    "f")
+    resp_sql       = _qualify(resp_expr,       "d")
+
+    # Decreases only
+    sql = f"""
+        SELECT
+            {item_code_sql}                                                            AS item_code,
+            d.name_a                                                                    AS legal_instrument_drug,
+            {form_sql}                                                                  AS legal_instrument_form,
+            COALESCE(CAST({fm_brand_sql} AS VARCHAR), CAST({line_brand_sql} AS VARCHAR)) AS brand_name,
+            COALESCE(CAST({fm_resp_sql}  AS VARCHAR), CAST({resp_sql}       AS VARCHAR)) AS responsible_person,
+            SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_start,
+            SUM(CASE WHEN f.snapshot_date::DATE = ? THEN f.aemp END) AS aemp_end
+        FROM fact_monthly f
+        JOIN dim_product_line d USING (product_line_id)
+        WHERE f.snapshot_date::DATE IN (?, ?)
+        GROUP BY 1,2,3,4,5
+        HAVING aemp_start IS NOT NULL
+           AND aemp_end   IS NOT NULL
+           AND aemp_end < aemp_start
+        ORDER BY (aemp_start - aemp_end) DESC
+    """
+    df = con.execute(sql, [start_month, end_month, start_month, end_month]).df()
+
+    nice_start = pd.to_datetime(start_month).strftime("%b %Y")
+    nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
+    st.markdown(f"### AEMP price decreases: {nice_start} to {nice_end}")
+
+    if df.empty:
+        st.info(f"No decreases found between {nice_start} and {nice_end}.")
+        return
+
+    # Deltas
+    df["abs_change"] = (df["aemp_start"] - df["aemp_end"]).round(2)  # positive drop size
+    df["pct_change"] = (
+        ((df["aemp_end"] - df["aemp_start"]) / df["aemp_start"]) * 100
+    ).round(2)  # negative %
+
+    df["aemp_start"] = df["aemp_start"].round(2)
+    df["aemp_end"]   = df["aemp_end"].round(2)
+
+    # Final column order
+    df = df[
+        [
+            "item_code",
+            "legal_instrument_drug",
+            "legal_instrument_form",
+            "brand_name",
+            "responsible_person",
+            "aemp_start",
+            "aemp_end",
+            "abs_change",
+            "pct_change",
+        ]
+    ]
+
+    # Summary
+    items_count  = len(df)
+    largest_drop = float(df["abs_change"].max())
+    median_drop  = float(df["abs_change"].median())
+    total_drop   = float(df["abs_change"].sum())
+    st.text(
+        f"Summary: {items_count} items decreased. "
+        f"Largest −${largest_drop:,.2f}, median −${median_drop:,.2f}, total −${total_drop:,.2f}."
+    )
+
+    # On-screen pretty percent (CSV stays numeric)
+    df_display = df.copy()
+    df_display["pct_change"] = df_display["pct_change"].apply(
+        lambda x: f"{x:.2f}%" if pd.notnull(x) else ""
+    )
+
+    st.text(f"Showing decreases from {nice_start} to {nice_end}.")
+    st.dataframe(df_display, use_container_width=True)
+
+    st.download_button(
+        f"Download CSV: decreases {nice_start} to {nice_end}",
+        df.to_csv(index=False).encode("utf-8"),
+        file_name=f"aemp_decreases_{pd.to_datetime(start_month).strftime('%Y-%m')}_to_{pd.to_datetime(end_month).strftime('%Y-%m')}.csv",
+        mime="text/csv",
+    )
+
+# ---------------- Calls ----------------
+show_month_to_month_increases(con)   # existing section (toggled via "mom_show")
+show_month_to_month_decreases(con)   # new section (toggled via "momd_show")
+
 # ---- Page setup ----
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
