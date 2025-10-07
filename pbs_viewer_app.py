@@ -6,6 +6,8 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 import gdown
+st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
+st.title("PBS AEMP Price Viewer")
 
 def show_month_to_month_increases(con):
     # ---- Gate the whole section behind a sidebar toggle ----
@@ -306,14 +308,7 @@ def show_month_to_month_decreases(con):
         mime="text/csv",
     )
 
-# ---------------- Calls ----------------
-show_month_to_month_increases(con)   # existing section (toggled via "mom_show")
-show_month_to_month_decreases(con)   # new section (toggled via "momd_show")
-
 # ---- Page setup ----
-st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
-st.title("PBS AEMP Price Viewer")
-
 def ensure_db() -> Path:
     """
     Use a local DuckDB. Order of preference:
@@ -398,6 +393,7 @@ fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible
 
 # --- Always-on, database-wide month-to-month increases (shown near top) ---
 show_month_to_month_increases(con)
+show_month_to_month_decreases(con)
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 meta_sql = f"""
