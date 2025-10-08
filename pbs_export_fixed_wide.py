@@ -185,6 +185,14 @@ def main():
     skip_aliases = set(pm_aliases.values())
     select_left = [f'l."{real}" AS "{alias}"' for (real, alias) in select_pairs if alias not in skip_aliases]
     pm_selects  = [f'pm."{src}" AS "{alias}"' for src, alias in pm_aliases.items()]
+
+    # ---- DEBUG: show exactly which columns will be used ----
+    chosen_map = {alias: real for (real, alias) in select_pairs}
+    print("LINE-TABLE MAPPING:", chosen_map)
+    print("PRICE OVERRIDES  :", pm_aliases)
+    print("Will skip aliases:", set(pm_aliases.values()))
+    # ---- END DEBUG ----
+
     left_select_clause = ", ".join(select_left + pm_selects) if pm_selects else ", ".join(select_left)
 
     # 3.6 Build long frame
