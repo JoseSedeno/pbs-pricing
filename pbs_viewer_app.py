@@ -525,9 +525,10 @@ def build_export_table(drug: str) -> pd.DataFrame:
         line_brand  = pick(d_cols, "brand_name")
         line_formul = pick(d_cols, "attr_f", "formulary")
 
-        fm_brand    = pick(f_cols, "brand_name")
-        fm_formul   = pick(f_cols, "formulary")
-        fm_amt      = pick(f_cols, "amt_trade_product_pack", "amt_trade_pack")
+        # IMPORTANT: defaults to NULL so SQL remains valid if column missing
+        fm_brand    = pick(f_cols, "brand_name", default="NULL")
+        fm_formul   = pick(f_cols, "formulary", default="NULL")
+        fm_amt      = pick(f_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
         snapshot    = pick(f_cols, "snapshot_date", "snapshot", "date")
         price_col   = pick(f_cols, "aemp", "exmanufacturerprice", "ex_manufacturer_price")
         if not all([item_code, name_a, form_src, snapshot, price_col]):
