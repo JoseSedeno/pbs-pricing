@@ -72,7 +72,7 @@ def detect_schema(con):
     if not price_tbl:
         raise RuntimeError("Could not detect price table with snapshot_date and AEMP.")
 
-    # Find line/product table that shares a join column with price table
+    # Find line/product table that shares a join column with the price table
     join_candidates = ["product_line_id", "product_id", "line_id", "product_line", "dim_product_line_id", "pl_id", "id"]
     line_tbl = join_col = None
     price_cols = _lower_set(list_columns(con, price_tbl))
@@ -119,13 +119,17 @@ def main():
     line_cols_all = list_columns(con, line_tbl)
     line_cols_lower = _lower_set(line_cols_all)
 
+    # NOTE:
+    # - Formulary MUST come from attr_f in dim (that is where Formulary lives).
+    #   We still prefer the latest snapshot value from the price table if present.
+    # - Removed attr_g from Brand mapping (attr_g is Program in our schema).
     left_targets = [
-        ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),            # A
-        ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]),       # B
-        ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),            # C
-        ("Brand Name",            ["brand_name", "attr_g", "brand"]),                      # E (replaced by price-table value if present)
-        ("Formulary",             ["formulary", "attr_j"]),                                # F (replaced by price-table value if present)
-        ("Responsible Person",    ["responsible_person", "name_b"]),                       # I
+        ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),      # A
+        ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]), # B
+        ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),      # C
+        ("Brand Name",            ["brand_name", "brand"]),                           # E (overridden by price table if present)
+        ("Formulary",             ["attr_f", "formulary"]),                           # F (overridden by price table if present)
+        ("Responsible Person",    ["responsible_person", "name_b"]),                  # I
         # AMT Trade Product Pack comes from price table latest snapshot (X)
     ]
 
