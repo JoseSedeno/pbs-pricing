@@ -39,6 +39,19 @@ import os, re, glob, argparse
 import pandas as pd
 import duckdb
 
+# --- Punctuation normalizer for identifier fields (no word changes) ---
+def normalize_punct(s):
+    # Preserve missing values so later dropna() still works
+    if s is None or (isinstance(s, float) and pd.isna(s)):
+        return None
+    s = str(s)
+    s = re.sub(r"[:;|/]", ",", s)          # unify separators to comma
+    s = re.sub(r",\s*,+", ",", s)          # collapse duplicate commas
+    s = re.sub(r"\s*,\s*", ", ", s)        # normalize spaces around commas
+    s = re.sub(r"\s+", " ", s)             # collapse general whitespace
+    s = s.strip()
+    return s if s else None
+
 # --------- Header matching (by NAME, not letter) ----------
 REQUIRED = {
     "Item Code": ["item code", "pbs code", "code"],
@@ -81,7 +94,7 @@ def find_col(cols, aliases):
     return None
 
 def normalize_text(s):
-    if s is None:
+    if s is None or (isinstance(s, float) and pd.isna(s)):
         return None
     s = str(s).strip()
     s = re.sub(r"\s+", " ", s)
@@ -183,14 +196,23 @@ def main():
             opt_map = {need: find_col(cols, aliases) for need, aliases in OPTIONAL.items()}
             print("    header map (optional):", opt_map)
 
-            keep_cols = [req_map["Item Code"], req_map["Legal Instrument Drug"], req_map["Legal Instrument Form"],
-                         req_map["Formulary"], req_map["Program"], req_map["Pack Quantity"], req_map["AEMP"]]
+            keep_cols = [
+                req_map["Item Code"],
+                req_map["Legal Instrument Drug"],
+                req_map["Legal Instrument Form"],
+                req_map["Formulary"],
+                req_map["Program"],
+                req_map["Pack Quantity"],
+                req_map["AEMP"],
+            ]
+
             # add optional if present
-            for k,v in opt_map.items():
+            for k, v in opt_map.items():
                 if v is not None:
                     keep_cols.append(v)
 
             sub = df[keep_cols].copy()
+
             # rename to canonical names
             rename_map = {
                 req_map["Item Code"]: "Item Code",
@@ -214,6 +236,22 @@ def main():
                 if c in sub.columns:
                     sub[c] = sub[c].map(normalize_text)
 
+            # --- Normalize punctuation on identifier fields (punctuation only) ---
+            ID_COLS = [
+                "Item Code",
+                "Legal Instrument Drug",
+                "Legal Instrument Form",
+                "Formulary",
+                "Program",
+                "Pack Quantity",
+                "Brand Name",
+                "Responsible Person",
+                "AMT Trade Product Pack",
+            ]
+            for col in ID_COLS:
+                if col in sub.columns:
+                    sub[col] = sub[col].map(normalize_punct)
+
             # Price numeric
             sub["AEMP"] = sub["AEMP"].astype(str).str.replace(",", "", regex=False).str.strip()
             sub["AEMP_num"] = pd.to_numeric(sub["AEMP"], errors="coerce")
@@ -235,14 +273,12 @@ def main():
             sub = sub.dropna(subset=["Legal Instrument Drug", "Item Code", "SnapshotDate"])
 
             # ---- Build base identity + variant signature ----
-            # Base identity (A,B,C,F,G,J)
-            base_cols = ["Legal Instrument Drug","Item Code","Legal Instrument Form","Formulary","Program","Pack Quantity"]
+            base_cols = ["Legal Instrument Drug", "Item Code", "Legal Instrument Form", "Formulary", "Program", "Pack Quantity"]
 
-            # Variant signature BASE = attributes likely to distinguish duplicates
-            # (keep it stable across months; do NOT include AEMP here)
+            # Variant signature BASE (do NOT include AEMP here)
             sig_parts = []
-            for c in ["Legal Instrument MoA","Brand Name","Manufacturer Code","Responsible Person",
-                      "Pricing Quantity","Maximum Quantity","Maximum Repeats","AMT Trade Product Pack"]:
+            for c in ["Legal Instrument MoA", "Brand Name", "Manufacturer Code", "Responsible Person",
+                      "Pricing Quantity", "Maximum Quantity", "Maximum Repeats", "AMT Trade Product Pack"]:
                 if c in sub.columns:
                     sig_parts.append(sub[c].fillna(""))
                 else:
@@ -254,27 +290,26 @@ def main():
                 sig_base = sig_base + " | " + s.astype(str)
             sub["variant_signature_base"] = sig_base
 
-            # We treat DIFFERENT AEMP in SAME month as separate variants:
-            # per month, per base identity, per variant_signature_base, we keep DISTINCT AEMP_num
-            # That means multiplying variants only when a conflict exists.
+            # Prepare distinct rows to insert
             grp_keys = base_cols + ["variant_signature_base", "SnapshotDate", "SourceFile"]
-            cols_to_keep = base_cols + ["AEMP_num","SourceFile","SnapshotDate",
-                                        "Legal Instrument MoA","Brand Name","Manufacturer Code","Responsible Person",
-                                        "Pricing Quantity","Maximum Quantity","Maximum Repeats","AMT Trade Product Pack","amt_pack_program",
-                                        "variant_signature_base"]
+            cols_to_keep = base_cols + [
+                "AEMP_num", "SourceFile", "SnapshotDate",
+                "Legal Instrument MoA", "Brand Name", "Manufacturer Code", "Responsible Person",
+                "Pricing Quantity", "Maximum Quantity", "Maximum Repeats", "AMT Trade Product Pack", "amt_pack_program",
+                "variant_signature_base"
+            ]
 
             sub_distinct = (sub[cols_to_keep]
                             .drop_duplicates()
                             .dropna(subset=["AEMP_num"]))  # we only store numeric AEMP
 
-            # For collision logging: count distinct AEMP per base+sig_base in this month
+            # For collision logging
             collisions = (sub_distinct
-                          .groupby(base_cols + ["variant_signature_base","SnapshotDate","SourceFile"])["AEMP_num"]
+                          .groupby(base_cols + ["variant_signature_base", "SnapshotDate", "SourceFile"])["AEMP_num"]
                           .agg(["nunique", lambda s: ", ".join(sorted({f"{v:.6f}" for v in s}))])
                           .reset_index())
-            collisions = collisions.rename(columns={"nunique":"distinct_aemps","<lambda_0>":"example_aemps"})
+            collisions = collisions.rename(columns={"nunique": "distinct_aemps", "<lambda_0>": "example_aemps"})
 
-            # Save collisions with distinct_aemps > 1
             coll_to_log = collisions[collisions["distinct_aemps"] > 1].copy()
             if not coll_to_log.empty:
                 con.register("tmp_coll", coll_to_log)
@@ -296,8 +331,6 @@ def main():
             con.register("tmp_sub", sub_distinct)
 
             # --- Insert NEW variants into dim_product_line ---
-            # We try to match an existing variant by base identity + variant_signature_base + variant_init_aemp == AEMP_num.
-            # If not found, we create a NEW variant_no (1 + max for that base).
             con.execute("""
             INSERT INTO dim_product_line (
                 product_line_id, item_code_b, name_a, attr_c, attr_f, attr_g, attr_j,
@@ -419,4 +452,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
 
