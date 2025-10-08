@@ -482,47 +482,21 @@ def get_series(drug: str, merge_codes: bool):
 # ---- Wide table (unchanged) ----
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # 1) Long series per product_line_id
-    s = get_series(drug, merge_codes=False).copy()
-    s["month"] = pd.to_datetime(s["month"], errors="coerce")
-    s = s.dropna(subset=["month"])
+    # Read the exact Excel-wide copy from DuckDB
+    try:
+        df = con.execute(
+            'SELECT * FROM wide_fixed WHERE lower("Legal Instrument Drug") = lower(?)',
+            [drug],
+        ).df()
+    except duckdb.CatalogException:
+        st.error('Table "wide_fixed" not found. Run the exporter to build it.'); st.stop()
 
-    # 2) Month headers like "AEMP Aug 13"
-    s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
-
-    # 3) Wide pivot: one row per product_line_id, one column per month
-    wide = (
-        s.pivot_table(
-            index="product_line_id",
-            columns="col_label",
-            values="aemp",
-            aggfunc="first",
-        )
-        .reset_index()
+    # Keep month columns in chronological order
+    month_cols = sorted(
+        [c for c in df.columns if str(c).startswith("AEMP ")],
+        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce"),
     )
 
-    # 4) Left metadata via meta_sql (includes product_line_id)
-    meta = con.execute(meta_sql, [drug]).df()
-
-    # 5) Join by product_line_id
-    out = meta.merge(wide, on="product_line_id", how="left")
-
-    # 5b) Collapse exact duplicates based on the left block
-    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
-    out = out.groupby(
-        [
-            "Item Code",
-            "Legal Instrument Drug",
-            "Legal Instrument Form",
-            "Brand Name",
-            "Formulary",
-            "Responsible Person",
-            "AMT Trade Product Pack",
-        ],
-        as_index=False
-    ).agg({c: "first" for c in month_cols})
-
-    # 6) Fixed left columns in order + month columns sorted
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
@@ -532,24 +506,9 @@ def build_export_table(drug: str) -> pd.DataFrame:
         "Responsible Person",
         "AMT Trade Product Pack",
     ]
-    month_cols = sorted(
-        [c for c in out.columns if c.startswith("AEMP ")],
-        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
-    )
 
-    # 6b) Match Excel row order
-    row_order = [
-        "Item Code",
-        "Brand Name",
-        "Legal Instrument Form",
-        "Formulary",
-        "AMT Trade Product Pack",
-        "Responsible Person",
-    ]
-    out = out.sort_values(row_order, kind="stable").reset_index(drop=True)
-
-    # Return without product_line_id
-    return out[[c for c in fixed if c in out.columns] + month_cols]
+    cols = [c for c in fixed if c in df.columns] + month_cols
+    return df[cols]
 
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
