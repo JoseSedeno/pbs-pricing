@@ -482,158 +482,74 @@ def get_series(drug: str, merge_codes: bool):
 # ---- Wide table (unchanged) ----
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # 1) Try to read the prebuilt materialized table (perfect match to Excel)
-    try:
-        df = con.execute(
-            'SELECT * FROM wide_fixed WHERE lower("Legal Instrument Drug") = lower(?)',
-            [drug],
-        ).df()
+    # 1) Long series per product_line_id
+    s = get_series(drug, merge_codes=False).copy()
+    s["month"] = pd.to_datetime(s["month"], errors="coerce")
+    s = s.dropna(subset=["month"])
 
-        month_cols = sorted(
-            [c for c in df.columns if str(c).startswith("AEMP ")],
-            key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce"),
+    # 2) Month headers like "AEMP Aug 13"
+    s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
+
+    # 3) Wide pivot: one row per product_line_id, one column per month
+    wide = (
+        s.pivot_table(
+            index="product_line_id",
+            columns="col_label",
+            values="aemp",
+            aggfunc="first",
         )
-        fixed = [
-            "Item Code", "Legal Instrument Drug", "Legal Instrument Form",
-            "Brand Name", "Formulary", "Responsible Person", "AMT Trade Product Pack",
-        ]
-        return df[[c for c in fixed if c in df.columns] + month_cols]
+        .reset_index()
+    )
 
-    except duckdb.CatalogException:
-        # 2) Fallback: build the same wide on-the-fly (no external script needed)
-        import re
-        def _normalize_amt_trade_pack(x: str) -> str:
-            if x is None:
-                return x
-            s = str(x).replace("\u00A0", " ")
-            s = re.sub(r'(?<!\d)\s*,\s*(?!\d)', ' ', s)  # remove commas only between words
-            s = re.sub(r'\s+', ' ', s).strip()
-            return s
+    # 4) Left metadata via meta_sql (includes product_line_id)
+    meta = con.execute(meta_sql, [drug]).df()
 
-        # Schema-safe column picking
-        d_cols  = {r[1].lower(): r[1] for r in con.execute('PRAGMA table_info("dim_product_line")').fetchall()}
-        f_cols  = {r[1].lower(): r[1] for r in con.execute('PRAGMA table_info("fact_monthly")').fetchall()}
-        def pick(m,*names, default=None):
-            for n in names:
-                if n and n.lower() in m: return f'"{m[n.lower()]}"'
-            return default
+    # 5) Join by product_line_id
+    out = meta.merge(wide, on="product_line_id", how="left")
 
-        item_code   = pick(d_cols, "item_code", "item_code_b", "item_code_a")
-        name_a      = '"name_a"'
-        form_src    = pick(d_cols, "legal_instrument_form", "attr_c", "form")
-        resp        = pick(d_cols, "responsible_person", "name_b")
-        line_brand  = pick(d_cols, "brand_name")
-        line_formul = pick(d_cols, "attr_f", "formulary")
+    # 5b) Collapse exact duplicates based on the left block
+    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
+    out = out.groupby(
+        [
+            "Item Code",
+            "Legal Instrument Drug",
+            "Legal Instrument Form",
+            "Brand Name",
+            "Formulary",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+        ],
+        as_index=False
+    ).agg({c: "first" for c in month_cols})
 
-        # IMPORTANT: defaults to NULL so SQL remains valid if column missing
-        fm_brand    = pick(f_cols, "brand_name", default="NULL")
-        fm_formul   = pick(f_cols, "formulary", default="NULL")
-        fm_amt      = pick(f_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
-        snapshot    = pick(f_cols, "snapshot_date", "snapshot", "date")
-        price_col   = pick(f_cols, "aemp", "exmanufacturerprice", "ex_manufacturer_price")
-        if not all([item_code, name_a, form_src, snapshot, price_col]):
-            st.error("Schema missing required columns to build wide table on the fly."); st.stop()
+    # 6) Fixed left columns in order + month columns sorted
+    fixed = [
+        "Item Code",
+        "Legal Instrument Drug",
+        "Legal Instrument Form",
+        "Brand Name",
+        "Formulary",
+        "Responsible Person",
+        "AMT Trade Product Pack",
+    ]
+    month_cols = sorted(
+        [c for c in out.columns if c.startswith("AEMP ")],
+        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
+    )
 
-        # Latest snapshot meta
-        fm_latest_sql = f"""
-            SELECT product_line_id,
-                   {fm_brand}  AS fm_brand_name,
-                   {fm_formul} AS fm_formulary,
-                   {fm_amt}    AS fm_amt_trade_product_pack,
-                   ROW_NUMBER() OVER (PARTITION BY product_line_id ORDER BY {snapshot} DESC) AS rn
-            FROM fact_monthly
-        """
+    # 6b) Match Excel row order
+    row_order = [
+        "Item Code",
+        "Brand Name",
+        "Legal Instrument Form",
+        "Formulary",
+        "AMT Trade Product Pack",
+        "Responsible Person",
+    ]
+    out = out.sort_values(row_order, kind="stable").reset_index(drop=True)
 
-        meta_sql = f"""
-        WITH fm AS ({fm_latest_sql})
-        SELECT
-          d.product_line_id                                             AS product_line_id,
-          {item_code}                                                   AS "Item Code",
-          {name_a}                                                      AS "Legal Instrument Drug",
-          {form_src}                                                    AS "Legal Instrument Form",
-          COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST({line_brand} AS VARCHAR)) AS "Brand Name",
-          CASE
-            WHEN COALESCE(CAST({line_formul} AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('1','F1')  THEN 'F1'
-            WHEN COALESCE(CAST({line_formul} AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('60','F2') THEN 'F2'
-            WHEN UPPER(COALESCE(CAST({line_formul} AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)))='CDL'  THEN 'CDL'
-            ELSE NULLIF(COALESCE(CAST({line_formul} AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)),'')
-          END                                                           AS "Formulary",
-          {resp}                                                        AS "Responsible Person",
-          fm.fm_amt_trade_product_pack                                  AS "AMT Trade Product Pack"
-        FROM dim_product_line d
-        LEFT JOIN fm ON fm.product_line_id = d.product_line_id AND fm.rn = 1
-        WHERE lower({name_a}) = lower(?)
-        """
-        meta = con.execute(meta_sql, [drug]).df()
-
-        # Long series per product_line_id
-        series_sql = f"""
-            SELECT
-              {snapshot}::DATE AS month,
-              d.product_line_id AS product_line_id,
-              {price_col}       AS aemp
-            FROM fact_monthly f
-            JOIN dim_product_line d USING (product_line_id)
-            WHERE lower(d.name_a) = lower(?)
-        """
-        s = con.execute(series_sql, [drug]).df()
-        if s.empty or meta.empty:
-            return meta.iloc[0:0]
-
-        # Dedup per month, latest wins
-        s["month"] = pd.to_datetime(s["month"], errors="coerce")
-        s = s.dropna(subset=["month"]).sort_values(["product_line_id","month"])
-        s["__ym"] = s["month"].dt.to_period("M").astype(str)
-        s = s.drop_duplicates(subset=["product_line_id","__ym"], keep="last").drop(columns="__ym")
-        s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
-
-        wide = (
-            s.pivot_table(
-                index="product_line_id",
-                columns="col_label",
-                values="aemp",
-                aggfunc="first",
-            )
-            .reset_index()
-        )
-
-        out = meta.merge(wide, on="product_line_id", how="left")
-
-        # Normalize left identifiers
-        for c in [
-            "Item Code","Legal Instrument Drug","Legal Instrument Form",
-            "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack"
-        ]:
-            if c in out.columns:
-                out[c] = (
-                    out[c].astype("string").fillna("")
-                          .str.replace("\u00A0", " ", regex=False)
-                          .str.replace(r"\s+", " ", regex=True)
-                          .str.strip()
-                )
-        if "AMT Trade Product Pack" in out.columns:
-            out["AMT Trade Product Pack"] = out["AMT Trade Product Pack"].map(_normalize_amt_trade_pack)
-
-        # Collapse exact duplicates on the left block
-        month_cols = [c for c in out.columns if str(c).startswith("AEMP ")]
-        out = out.groupby(
-            [
-                "Item Code","Legal Instrument Drug","Legal Instrument Form",
-                "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack",
-            ],
-            as_index=False
-        ).agg({c: "first" for c in month_cols})
-
-        # Final ordering
-        fixed = [
-            "Item Code","Legal Instrument Drug","Legal Instrument Form",
-            "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack",
-        ]
-        month_cols = sorted(
-            [c for c in out.columns if str(c).startswith("AEMP ")],
-            key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce"),
-        )
-        return out[[c for c in fixed if c in out.columns] + month_cols]
+    # Return without product_line_id
+    return out[[c for c in fixed if c in out.columns] + month_cols]
 
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
