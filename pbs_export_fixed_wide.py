@@ -1,4 +1,4 @@
-port wide #!/usr/bin/env python3
+#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
 pbs_export_fixed_wide.py  (identifiers = A,B,C,E,F,I,X with dedup)
@@ -318,4 +318,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
