@@ -421,6 +421,7 @@ fm AS (
   FROM "fact_monthly"
 )
 SELECT
+  d.product_line_id                             AS product_line_id,
   d.item_code_b                                 AS "Item Code",
   d.name_a                                      AS "Legal Instrument Drug",
   d.form_src                                    AS "Legal Instrument Form",
@@ -452,39 +453,36 @@ def get_drugs():
 def get_series(drug: str, merge_codes: bool):
     if merge_codes:
         sql = """
-        SELECT
-          f.snapshot_date::DATE AS month,
-          AVG(f.aemp) AS aemp
-        FROM fact_monthly f
-        JOIN dim_product_line d USING (product_line_id)
-        WHERE lower(d.name_a) = lower(?)
-        GROUP BY 1
-        ORDER BY 1
+            SELECT
+              f.snapshot_date::DATE AS month,
+              AVG(f.aemp) AS aemp
+            FROM fact_monthly f
+            JOIN dim_product_line d USING (product_line_id)
+            WHERE lower(d.name_a) = lower(?)
+            GROUP BY 1
+            ORDER BY 1
         """
         df = con.execute(sql, [drug]).df()
     else:
-        sql = """
-        SELECT
-          f.snapshot_date::DATE AS month,
-          d.item_code_b         AS item_code,
-          f.aemp
-        FROM fact_monthly f
-        JOIN dim_product_line d USING (product_line_id)
-        WHERE lower(d.name_a) = lower(?)
-        ORDER BY 1, 2
+        sql = f"""
+            SELECT
+              f.snapshot_date::DATE AS month,
+              d.product_line_id     AS product_line_id,
+              {item_code_expr}      AS item_code,
+              f.aemp
+            FROM fact_monthly f
+            JOIN dim_product_line d USING (product_line_id)
+            WHERE lower(d.name_a) = lower(?)
+            ORDER BY 1, 2, 3
         """
-        try:
-            df = con.execute(sql, [drug]).df()
-        except duckdb.BinderException:
-            # fallback if item_code_b doesn't exist
-            sql_fallback = sql.replace("d.item_code_b", "d.item_code")
-            df = con.execute(sql_fallback, [drug]).df()
+        df = con.execute(sql, [drug]).df()
+
     return df
 
 # ---- Wide table (unchanged) ----
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # 1) Long series per item
+    # 1) Long series per product_line_id
     s = get_series(drug, merge_codes=False).copy()
     s["month"] = pd.to_datetime(s["month"], errors="coerce")
     s = s.dropna(subset=["month"])
@@ -492,29 +490,24 @@ def build_export_table(drug: str) -> pd.DataFrame:
     # 2) Month headers like "AEMP Aug 13"
     s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
 
-    # 3) Wide pivot for prices (one row per Item Code; one column per month)
+    # 3) Wide pivot: one row per product_line_id, one column per month
     wide = (
         s.pivot_table(
-            index="item_code",
+            index="product_line_id",
             columns="col_label",
             values="aemp",
             aggfunc="first",
         )
         .reset_index()
-        .rename(columns={"item_code": "Item Code"})
     )
 
-    # 4) Left metadata (latest snapshot fields included via meta_sql)
-    meta = (
-        con.execute(meta_sql, [drug])
-        .df()
-        .drop_duplicates(subset=["Item Code"])
-    )
+    # 4) Left metadata via meta_sql (includes product_line_id)
+    meta = con.execute(meta_sql, [drug]).df()
 
-    # 5) Join meta + prices
-    out = meta.merge(wide, on="Item Code", how="left")
+    # 5) Join by product_line_id
+    out = meta.merge(wide, on="product_line_id", how="left")
 
-    # 6) Fixed left columns (exact order) + month columns (chronological)
+    # 6) Fixed left columns in order + month columns sorted
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
@@ -530,6 +523,7 @@ def build_export_table(drug: str) -> pd.DataFrame:
         key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
     )
 
+    # Return without product_line_id
     return out[[c for c in fixed if c in out.columns] + month_cols]
 
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
