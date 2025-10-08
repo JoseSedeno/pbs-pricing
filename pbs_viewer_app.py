@@ -507,6 +507,21 @@ def build_export_table(drug: str) -> pd.DataFrame:
     # 5) Join by product_line_id
     out = meta.merge(wide, on="product_line_id", how="left")
 
+    # 5b) Collapse exact duplicates based on the left block
+    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
+    out = out.groupby(
+        [
+            "Item Code",
+            "Legal Instrument Drug",
+            "Legal Instrument Form",
+            "Brand Name",
+            "Formulary",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+        ],
+        as_index=False
+    ).agg({c: "first" for c in month_cols})
+
     # 6) Fixed left columns in order + month columns sorted
     fixed = [
         "Item Code",
@@ -517,11 +532,21 @@ def build_export_table(drug: str) -> pd.DataFrame:
         "Responsible Person",
         "AMT Trade Product Pack",
     ]
-    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
     month_cols = sorted(
-        month_cols,
+        [c for c in out.columns if c.startswith("AEMP ")],
         key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
     )
+
+    # 6b) Match Excel row order
+    row_order = [
+        "Item Code",
+        "Brand Name",
+        "Legal Instrument Form",
+        "Formulary",
+        "AMT Trade Product Pack",
+        "Responsible Person",
+    ]
+    out = out.sort_values(row_order, kind="stable").reset_index(drop=True)
 
     # Return without product_line_id
     return out[[c for c in fixed if c in out.columns] + month_cols]
