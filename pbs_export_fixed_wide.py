@@ -17,7 +17,10 @@ Prevents double ups by:
 2) normalizing identifier strings
 3) dropping duplicates per month before pivot
 
-Outputs: out/aemp_fixed_wide.csv and .xlsx (if --xlsx)
+Outputs:
+- out/aemp_fixed_wide.csv
+- out/aemp_fixed_wide.xlsx (if --xlsx)
+- DuckDB table: wide_fixed (exact same dataframe as the Excel/CSV)
 """
 
 # ==============================
@@ -298,6 +301,12 @@ def main():
         except Exception as e:
             print(f"WARNING: Excel export failed ({e}). CSV was written.", file=sys.stderr)
 
+    # 3.10b Materialize EXACT copy into DuckDB for the viewer
+    con.register("df_wide", pt)
+    con.execute("CREATE OR REPLACE TABLE wide_fixed AS SELECT * FROM df_wide")
+    con.execute("CREATE OR REPLACE TABLE wide_fixed_meta AS SELECT CURRENT_TIMESTAMP AS built_at")
+    # (optional) con.unregister("df_wide")
+
     # 3.11 Console summary
     print("OK.")
     print("Detected:")
@@ -310,6 +319,7 @@ def main():
     print(f"CSV : {csv_path}")
     if args.xlsx:
         print(f"XLSX: {xlsx_path}")
+    print("DuckDB: wrote tables wide_fixed, wide_fixed_meta")
 
 
 # ===========================
