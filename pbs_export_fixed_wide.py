@@ -8,7 +8,7 @@ Left block identifiers in this exact order:
 - Legal Instrument Drug          (B)
 - Legal Instrument Form          (C)
 - Brand Name                     (E)  from latest snapshot
-- Formulary                      (F)  from latest snapshot
+- Formulary                      (F)  from latest snapshot or attr_f
 - Responsible Person             (I)
 - AMT Trade Product Pack         (X)  from latest snapshot
 
@@ -24,7 +24,7 @@ Outputs: out/aemp_fixed_wide.csv and .xlsx (if --xlsx)
 # SECTION 1: Imports and helpers
 # ==============================
 
-import argparse, os, sys
+import argparse, os, sys, re
 from datetime import datetime
 import duckdb, pandas as pd
 
@@ -45,6 +45,22 @@ def list_tables(con):
 def list_columns(con, table):
     # DESCRIBE returns rows with first column as the column name
     return [r[0] for r in con.execute(f'DESCRIBE "{table}"').fetchall()]
+
+
+def _normalize_amt_trade_pack(x: str) -> str:
+    """
+    Normalize AMT Trade Product Pack:
+    - remove commas only when they are between words (not numbers),
+      e.g., 'injection, solution' -> 'injection solution'
+      but '75 mg, 0.5 mL' stays as-is.
+    - collapse whitespace.
+    """
+    if x is None:
+        return x
+    s = str(x).replace("\u00A0", " ")
+    s = re.sub(r'(?<!\d)\s*,\s*(?!\d)', ' ', s)  # remove word-only commas
+    s = re.sub(r'\s+', ' ', s).strip()
+    return s
 
 
 # =========================================
@@ -220,6 +236,10 @@ def main():
         print("No data returned. Check DB contents.", file=sys.stderr)
         sys.exit(1)
 
+    # ---- Normalize AMT punctuation safely (words-only commas) ----
+    if "AMT Trade Product Pack" in df.columns:
+        df["AMT Trade Product Pack"] = df["AMT Trade Product Pack"].map(_normalize_amt_trade_pack)
+
     # 3.7 Normalize identifiers and drop duplicates per month
     id_cols = [c for c in [
         "Item Code", "Legal Instrument Drug", "Legal Instrument Form",
@@ -298,3 +318,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
