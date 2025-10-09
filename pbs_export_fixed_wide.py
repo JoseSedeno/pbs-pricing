@@ -298,18 +298,23 @@ def main():
     month_cols_sorted = sorted(month_cols, key=_mkey)
     pt = pt[left_export_headers + month_cols_sorted]
 
-    # 3.11 Validation to catch drifts
-    # No mixed Formulary within the same left ID row
-    grp = pt.groupby([
-        "Item Code","Legal Instrument Drug","Legal Instrument Form",
-        "Brand Name","Responsible Person","AMT Trade Product Pack"
-    ])["Formulary"].nunique(dropna=True)
+   # 3.11 Validation to catch drifts (safe on missing columns)
+
+_grp_cols = [c for c in [
+    "Item Code","Legal Instrument Drug","Legal Instrument Form",
+    "Brand Name","Responsible Person","AMT Trade Product Pack"
+] if c in pt.columns]
+
+# No mixed Formulary within the same left-ID row
+if _grp_cols and "Formulary" in pt.columns:
+    grp = pt.groupby(_grp_cols)["Formulary"].nunique(dropna=True)
     bad = grp[grp > 1]
     if len(bad):
         raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
 
-    # Business rule example for Abacavir if required by your dataset
-    ab = pt.loc[pt["Legal Instrument Drug"].str.lower() == "abacavir", "Formulary"].dropna().unique().tolist()
+# Optional business rule (runs only if both columns exist)
+if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
+    ab = pt.loc[pt["Legal Instrument Drug"].str.lower()=="abacavir","Formulary"].dropna().unique().tolist()
     if len(ab) and any(x != "F2" for x in ab):
         raise RuntimeError(f"Formulary check failed for Abacavir: found {sorted(ab)}, expected ['F2']")
 
