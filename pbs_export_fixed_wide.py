@@ -8,21 +8,19 @@ Left block identifiers in this exact order:
 - Legal Instrument Drug          (B)
 - Legal Instrument Form          (C)
 - Brand Name                     (E)  from latest snapshot
-- Formulary                      (F)  from attr_f in line table
+- Formulary                      (F)  from latest snapshot
 - Responsible Person             (I)
 - AMT Trade Product Pack         (X)  from latest snapshot
 
 Prevents double ups by:
-1) sourcing Brand and AMT from one place only, latest snapshot in price table
-2) sourcing Formulary only from attr_f in the line table
-3) normalizing identifier strings
-4) dropping duplicates per month before pivot
+1) taking Brand, Formulary, AMT pack from the latest snapshot in the price table
+2) normalizing identifier strings
+3) dropping duplicates per month before pivot
 
 Outputs:
 - out/aemp_fixed_wide.csv
 - out/aemp_fixed_wide.xlsx (if --xlsx)
-- DuckDB table: wide_fixed
-- DuckDB table: wide_fixed_meta
+- DuckDB tables: wide_fixed, wide_fixed_meta
 """
 
 # ==============================
@@ -160,7 +158,7 @@ def main():
         ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]), # B
         ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),      # C
         ("Brand Name",            ["brand_name", "brand"]),                           # E (overridden by price-table latest)
-        ("Formulary",             ["attr_f"]),                                        # F only from attr_f
+        ("Formulary",             ["attr_f", "formulary"]),                           # F base present, price-table latest overrides
         ("Responsible Person",    ["responsible_person", "name_b"]),                  # I
         # AMT Trade Product Pack comes from price table latest snapshot (X)
     ]
@@ -179,13 +177,18 @@ def main():
     if join_col.lower() not in line_cols_lower:
         raise RuntimeError(f"Join column {join_col} not present in {line_tbl}")
 
-    # 3.4 Snapshot attributes from price table for Brand and AMT (E, X)
+    # 3.4 Snapshot attributes from price table for Brand, Formulary and AMT (E, F, X)
     price_cols_all = [r[1] for r in con.execute(f"PRAGMA table_info('{price_tbl}')").fetchall()]
     lmap = {c.lower(): c for c in price_cols_all}
 
     pm_aliases = {}
+    # Brand from latest snapshot
     if "brand_name" in lmap:
         pm_aliases[lmap["brand_name"]] = "Brand Name"
+    # Formulary from latest snapshot
+    if "formulary" in lmap:
+        pm_aliases[lmap["formulary"]] = "Formulary"
+    # AMT Trade Product Pack from latest snapshot
     if "amt_trade_product_pack" in lmap:
         pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"
     elif "amt_trade_pack" in lmap:
@@ -295,7 +298,22 @@ def main():
     month_cols_sorted = sorted(month_cols, key=_mkey)
     pt = pt[left_export_headers + month_cols_sorted]
 
-    # 3.11 Write files
+    # 3.11 Validation to catch drifts
+    # No mixed Formulary within the same left ID row
+    grp = pt.groupby([
+        "Item Code","Legal Instrument Drug","Legal Instrument Form",
+        "Brand Name","Responsible Person","AMT Trade Product Pack"
+    ])["Formulary"].nunique(dropna=True)
+    bad = grp[grp > 1]
+    if len(bad):
+        raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
+
+    # Business rule example for Abacavir if required by your dataset
+    ab = pt.loc[pt["Legal Instrument Drug"].str.lower() == "abacavir", "Formulary"].dropna().unique().tolist()
+    if len(ab) and any(x != "F2" for x in ab):
+        raise RuntimeError(f"Formulary check failed for Abacavir: found {sorted(ab)}, expected ['F2']")
+
+    # 3.12 Write files
     csv_path  = os.path.join(out_dir, "aemp_fixed_wide.csv")
     xlsx_path = os.path.join(out_dir, "aemp_fixed_wide.xlsx")
     pt.to_csv(csv_path, index=False)
@@ -305,7 +323,7 @@ def main():
         except Exception as e:
             print(f"WARNING: Excel export failed ({e}). CSV was written.", file=sys.stderr)
 
-    # 3.12 Materialize exact copy into DuckDB for the viewer
+    # 3.13 Materialize exact copy into DuckDB for the viewer
     con.register("df_wide", pt)
     con.execute("CREATE OR REPLACE TABLE wide_fixed AS SELECT * FROM df_wide")
     con.execute("""
@@ -314,7 +332,7 @@ def main():
     """)
     # optional: con.unregister("df_wide")
 
-    # 3.13 Console summary
+    # 3.14 Console summary
     print("OK.")
     print("Detected:")
     print(f"  line_tbl  : {line_tbl}")
@@ -335,4 +353,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
