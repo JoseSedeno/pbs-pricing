@@ -353,6 +353,24 @@ try:
 except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
+    
+# ---- Load the exact wide table produced by the exporter ----
+@st.cache_data(show_spinner=False)
+def load_wide_from_db(db_path: str):
+    import os
+    mtime = os.path.getmtime(db_path)  # bust cache when DB is rebuilt
+    con2 = duckdb.connect(str(db_path), read_only=True)
+    df = con2.execute('SELECT * FROM wide_fixed').df()
+    try:
+        built_at = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()[0]
+    except Exception:
+        built_at = None
+    con2.close()
+    return df, built_at, mtime
+
+df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH))
+if wide_built_at:
+    st.caption(f"Wide table built at: {wide_built_at}")
 
 # ---------- helpers to adapt to schema ----------
 @st.cache_data
@@ -482,47 +500,23 @@ def get_series(drug: str, merge_codes: bool):
 # ---- Wide table (unchanged) ----
 @st.cache_data
 def build_export_table(drug: str) -> pd.DataFrame:
-    # 1) Long series per product_line_id
-    s = get_series(drug, merge_codes=False).copy()
-    s["month"] = pd.to_datetime(s["month"], errors="coerce")
-    s = s.dropna(subset=["month"])
+    # Use the exact wide table produced by the exporter
+    df = df_wide_all.copy()
+    if df.empty:
+        return df
 
-    # 2) Month headers like "AEMP Aug 13"
-    s["col_label"] = "AEMP " + s["month"].dt.strftime("%b %y")
+    # Filter by drug
+    if "Legal Instrument Drug" in df.columns:
+        df = df[df["Legal Instrument Drug"].str.lower() == (drug or "").lower()]
+    else:
+        return pd.DataFrame()
 
-    # 3) Wide pivot: one row per product_line_id, one column per month
-    wide = (
-        s.pivot_table(
-            index="product_line_id",
-            columns="col_label",
-            values="aemp",
-            aggfunc="first",
-        )
-        .reset_index()
+    # Month columns in chronological order
+    month_cols = sorted(
+        [c for c in df.columns if c.startswith("AEMP ")],
+        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
     )
 
-    # 4) Left metadata via meta_sql (includes product_line_id)
-    meta = con.execute(meta_sql, [drug]).df()
-
-    # 5) Join by product_line_id
-    out = meta.merge(wide, on="product_line_id", how="left")
-
-    # 5b) Collapse exact duplicates based on the left block
-    month_cols = [c for c in out.columns if c.startswith("AEMP ")]
-    out = out.groupby(
-        [
-            "Item Code",
-            "Legal Instrument Drug",
-            "Legal Instrument Form",
-            "Brand Name",
-            "Formulary",
-            "Responsible Person",
-            "AMT Trade Product Pack",
-        ],
-        as_index=False
-    ).agg({c: "first" for c in month_cols})
-
-    # 6) Fixed left columns in order + month columns sorted
     fixed = [
         "Item Code",
         "Legal Instrument Drug",
@@ -532,24 +526,8 @@ def build_export_table(drug: str) -> pd.DataFrame:
         "Responsible Person",
         "AMT Trade Product Pack",
     ]
-    month_cols = sorted(
-        [c for c in out.columns if c.startswith("AEMP ")],
-        key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce")
-    )
-
-    # 6b) Match Excel row order
-    row_order = [
-        "Item Code",
-        "Brand Name",
-        "Legal Instrument Form",
-        "Formulary",
-        "AMT Trade Product Pack",
-        "Responsible Person",
-    ]
-    out = out.sort_values(row_order, kind="stable").reset_index(drop=True)
-
-    # Return without product_line_id
-    return out[[c for c in fixed if c in out.columns] + month_cols]
+    fixed = [c for c in fixed if c in df.columns]
+    return df[fixed + month_cols].reset_index(drop=True)
 
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
