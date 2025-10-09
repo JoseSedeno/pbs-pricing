@@ -534,26 +534,36 @@ def build_export_table(drug: str) -> pd.DataFrame:
 def build_chart_df(drug: str) -> pd.DataFrame:
     """
     Build a long dataframe for the chart with columns:
-    month (datetime), display_name (new identifier), aemp (float).
-    Uses the existing wide export table; does NOT change that table.
+    month (datetime), display_name (identifier), aemp (float).
+    Reads from the same wide table used for the export and
+    gracefully handles missing identifier columns.
     """
     base = build_export_table(drug).copy()
     if base.empty:
         return base.assign(month=pd.NaT, display_name="", aemp=pd.NA).head(0)
 
-    # Helper for safe strings
-    def nz(col):
-        return col.astype(str).replace({"None": "", "nan": ""})
+    # Choose identifier columns that exist in wide_fixed
+    id_candidates = [
+        "Item Code",
+        "Formulary",
+        "Brand Name",
+        "Legal Instrument Form",
+        "AMT Trade Product Pack",
+        "Responsible Person",  # ignored if missing
+    ]
+    id_cols = [c for c in id_candidates if c in base.columns]
 
-    # New identifier = Item Code · Formulary · Brand Name · Legal Instrument Form · AMT Pack · Responsible Person
+    # Fallback guard
+    if not id_cols:
+        id_cols = [c for c in ["Item Code", "Brand Name"] if c in base.columns]
+
+    # Build a single display label by joining the available columns
+    base[id_cols] = base[id_cols].astype(str).replace({"None": "", "nan": ""})
     base["display_name"] = (
-        nz(base["Item Code"]) + " · " +
-        nz(base["Formulary"]) + " · " +
-        nz(base["Brand Name"]) + " · " +
-        nz(base["Legal Instrument Form"]) + " · " +
-        nz(base["AMT Trade Product Pack"]) + " · " +
-        nz(base["Responsible Person"])
-    ).str.replace(r"\s+·\s+$", "", regex=True)
+        base[id_cols]
+        .agg(" · ".join, axis=1)
+        .str.replace(r"( · )+$", "", regex=True)
+    )
 
     # Unpivot month columns
     month_cols = [c for c in base.columns if c.startswith("AEMP ")]
@@ -568,13 +578,14 @@ def build_chart_df(drug: str) -> pd.DataFrame:
     long_df["month"] = pd.to_datetime(
         long_df["month_label"].str.replace("AEMP ", "", regex=False),
         format="%b %y",
-        errors="coerce"
+        errors="coerce",
     )
 
-    # Clean & order columns EXACTLY as requested: Month → Identifier → AEMP
+    # Clean and order
     long_df = long_df.dropna(subset=["month"]).drop(columns=["month_label"])
-    long_df = long_df.sort_values(["display_name", "month"])
-    return long_df[["month", "display_name", "aemp"]]
+    long_df["aemp"] = pd.to_numeric(long_df["aemp"], errors="coerce")
+
+    return long_df.sort_values(["display_name", "month"])[["month", "display_name", "aemp"]]
 
 # ---- Sidebar ----
 with st.sidebar:
