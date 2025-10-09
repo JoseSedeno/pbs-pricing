@@ -8,20 +8,21 @@ Left block identifiers in this exact order:
 - Legal Instrument Drug          (B)
 - Legal Instrument Form          (C)
 - Brand Name                     (E)  from latest snapshot
-- Formulary                      (F)  from latest snapshot or attr_f
+- Formulary                      (F)  from attr_f in line table
 - Responsible Person             (I)
 - AMT Trade Product Pack         (X)  from latest snapshot
 
 Prevents double ups by:
-1) sourcing Brand, Formulary and AMT from one place only (latest snapshot)
-2) normalizing identifier strings
-3) dropping duplicates per month before pivot
+1) sourcing Brand and AMT from one place only, latest snapshot in price table
+2) sourcing Formulary only from attr_f in the line table
+3) normalizing identifier strings
+4) dropping duplicates per month before pivot
 
 Outputs:
 - out/aemp_fixed_wide.csv
 - out/aemp_fixed_wide.xlsx (if --xlsx)
-- DuckDB table: wide_fixed (exact same dataframe as the Excel or CSV)
-- DuckDB table: wide_fixed_meta (build metadata)
+- DuckDB table: wide_fixed
+- DuckDB table: wide_fixed_meta
 """
 
 # ==============================
@@ -59,7 +60,7 @@ def list_columns(con, table):
 def _normalize_amt_trade_pack(x: str) -> str:
     """
     Normalize AMT Trade Product Pack:
-    - remove commas only when they are between words (not numbers),
+    - remove commas only when they are between words, not numbers
       e.g., 'injection, solution' -> 'injection solution'
       but '75 mg, 0.5 mL' stays as-is
     - collapse whitespace
@@ -158,8 +159,8 @@ def main():
         ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),      # A
         ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]), # B
         ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),      # C
-        ("Brand Name",            ["brand_name", "brand"]),                           # E (overridden by price table if present)
-        ("Formulary",             ["attr_f", "formulary"]),                           # F (overridden by price table if present)
+        ("Brand Name",            ["brand_name", "brand"]),                           # E (overridden by price-table latest)
+        ("Formulary",             ["attr_f"]),                                        # F only from attr_f
         ("Responsible Person",    ["responsible_person", "name_b"]),                  # I
         # AMT Trade Product Pack comes from price table latest snapshot (X)
     ]
@@ -178,21 +179,13 @@ def main():
     if join_col.lower() not in line_cols_lower:
         raise RuntimeError(f"Join column {join_col} not present in {line_tbl}")
 
-    # 3.4 Snapshot attributes from price table for Brand, Formulary and AMT (E, F, X)
+    # 3.4 Snapshot attributes from price table for Brand and AMT (E, X)
     price_cols_all = [r[1] for r in con.execute(f"PRAGMA table_info('{price_tbl}')").fetchall()]
     lmap = {c.lower(): c for c in price_cols_all}
 
     pm_aliases = {}
-
-    # Brand from latest snapshot
     if "brand_name" in lmap:
         pm_aliases[lmap["brand_name"]] = "Brand Name"
-
-    # Formulary from latest snapshot (overrides line-table value)
-    if "formulary" in lmap:
-        pm_aliases[lmap["formulary"]] = "Formulary"
-
-    # AMT Trade Product Pack from latest snapshot
     if "amt_trade_product_pack" in lmap:
         pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"
     elif "amt_trade_pack" in lmap:
@@ -217,7 +210,7 @@ def main():
     select_left = [f'l."{real}" AS "{alias}"' for (real, alias) in select_pairs if alias not in skip_aliases]
     pm_selects  = [f'pm."{src}" AS "{alias}"' for src, alias in pm_aliases.items()]
 
-    # Debug prints for mapping traceability
+    # Trace mappings
     chosen_map = {alias: real for (real, alias) in select_pairs}
     print("LINE-TABLE MAPPING:", chosen_map)
     print("PRICE OVERRIDES  :", pm_aliases)
@@ -250,7 +243,7 @@ def main():
         print("No data returned. Check DB contents.", file=sys.stderr)
         sys.exit(1)
 
-    # 3.7 Normalize AMT punctuation safely (words-only commas)
+    # 3.7 Normalize AMT punctuation safely
     if "AMT Trade Product Pack" in df.columns:
         df["AMT Trade Product Pack"] = df["AMT Trade Product Pack"].map(_normalize_amt_trade_pack)
 
@@ -268,7 +261,7 @@ def main():
                  .str.strip()
         )
 
-    # Month key for dedup. keep the latest row in each month
+    # Keep the latest row in each month per identifier set
     df["__ym"] = pd.to_datetime(df["snapshot_date"]).dt.strftime("%Y-%m")
     df = (
         df.sort_values("snapshot_date")
@@ -276,7 +269,7 @@ def main():
           .drop(columns="__ym")
     )
 
-    # 3.9 Pivot wide using the requested identifiers
+    # 3.9 Pivot wide using requested identifiers
     df["snapshot_date"] = pd.to_datetime(df["snapshot_date"])
     df["MonthLabel"]    = df["snapshot_date"].dt.strftime("AEMP %b %y")
 
@@ -319,7 +312,7 @@ def main():
         CREATE OR REPLACE TABLE wide_fixed_meta AS
         SELECT CURRENT_TIMESTAMP AS built_at
     """)
-    # con.unregister("df_wide")  # optional
+    # optional: con.unregister("df_wide")
 
     # 3.13 Console summary
     print("OK.")
