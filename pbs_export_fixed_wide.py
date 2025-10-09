@@ -20,16 +20,22 @@ Prevents double ups by:
 Outputs:
 - out/aemp_fixed_wide.csv
 - out/aemp_fixed_wide.xlsx (if --xlsx)
-- DuckDB table: wide_fixed (exact same dataframe as the Excel/CSV)
+- DuckDB table: wide_fixed (exact same dataframe as the Excel or CSV)
+- DuckDB table: wide_fixed_meta (build metadata)
 """
 
 # ==============================
 # SECTION 1: Imports and helpers
 # ==============================
 
-import argparse, os, sys, re
+import argparse
+import os
+import sys
+import re
 from datetime import datetime
-import duckdb, pandas as pd
+
+import duckdb
+import pandas as pd
 
 
 def _lower_set(xs):
@@ -55,8 +61,8 @@ def _normalize_amt_trade_pack(x: str) -> str:
     Normalize AMT Trade Product Pack:
     - remove commas only when they are between words (not numbers),
       e.g., 'injection, solution' -> 'injection solution'
-      but '75 mg, 0.5 mL' stays as-is.
-    - collapse whitespace.
+      but '75 mg, 0.5 mL' stays as-is
+    - collapse whitespace
     """
     if x is None:
         return x
@@ -67,7 +73,7 @@ def _normalize_amt_trade_pack(x: str) -> str:
 
 
 # =========================================
-# SECTION 2: Detect schema (tables/columns)
+# SECTION 2: Detect schema (tables, columns)
 # =========================================
 
 def detect_schema(con):
@@ -89,10 +95,13 @@ def detect_schema(con):
             date_col = "snapshot_date" if "snapshot_date" in cols else ("snapshot" if "snapshot" in cols else "date")
             break
     if not price_tbl:
-        raise RuntimeError("Could not detect price table with snapshot_date and AEMP.")
+        raise RuntimeError("Could not detect price table with snapshot_date and AEMP")
 
-    # Find line/product table that shares a join column with the price table
-    join_candidates = ["product_line_id", "product_id", "line_id", "product_line", "dim_product_line_id", "pl_id", "id"]
+    # Find line or product table that shares a join column with the price table
+    join_candidates = [
+        "product_line_id", "product_id", "line_id", "product_line",
+        "dim_product_line_id", "pl_id", "id"
+    ]
     line_tbl = join_col = None
     price_cols = _lower_set(list_columns(con, price_tbl))
     for t in tables:
@@ -105,9 +114,15 @@ def detect_schema(con):
         if line_tbl:
             break
     if not line_tbl or not join_col:
-        raise RuntimeError("Could not find a product table sharing a join column with the price table.")
+        raise RuntimeError("Could not find a product table sharing a join column with the price table")
 
-    return {"line_tbl": line_tbl, "price_tbl": price_tbl, "join_col": join_col, "price_col": price_col, "date_col": date_col}
+    return {
+        "line_tbl": line_tbl,
+        "price_tbl": price_tbl,
+        "join_col": join_col,
+        "price_col": price_col,
+        "date_col": date_col,
+    }
 
 
 # ============================================
@@ -118,7 +133,7 @@ def main():
     # 3.1 Args and IO
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True, help="Path to pbs_prices.duckdb")
-    ap.add_argument("--output_dir", required=True, help="Where to write the export")
+    ap.add_argument("--output_dir", default="out", help="Where to write the export")
     ap.add_argument("--xlsx", action="store_true", help="Also write an .xlsx file")
     args = ap.parse_args()
 
@@ -132,16 +147,13 @@ def main():
     # 3.2 Connect and detect schema
     con = duckdb.connect(db)
     s = detect_schema(con)
-    line_tbl, price_tbl, join_col, price_col, date_col = s["line_tbl"], s["price_tbl"], s["join_col"], s["price_col"], s["date_col"]
+    line_tbl, price_tbl, join_col = s["line_tbl"], s["price_tbl"], s["join_col"]
+    price_col, date_col = s["price_col"], s["date_col"]
 
     # 3.3 Columns in line table and identifier mapping (A,B,C,E,F,I)
     line_cols_all = list_columns(con, line_tbl)
     line_cols_lower = _lower_set(line_cols_all)
 
-    # NOTE:
-    # - Formulary MUST come from attr_f in dim (that is where Formulary lives).
-    #   We still prefer the latest snapshot value from the price table if present.
-    # - Removed attr_g from Brand mapping (attr_g is Program in our schema).
     left_targets = [
         ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),      # A
         ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]), # B
@@ -162,9 +174,9 @@ def main():
         if chosen:
             select_pairs.append((chosen, friendly))
     if not select_pairs:
-        raise RuntimeError(f"No expected left columns found in {line_tbl}.")
+        raise RuntimeError(f"No expected left columns found in {line_tbl}")
     if join_col.lower() not in line_cols_lower:
-        raise RuntimeError(f"Join column {join_col} not present in {line_tbl}.")
+        raise RuntimeError(f"Join column {join_col} not present in {line_tbl}")
 
     # 3.4 Snapshot attributes from price table for Brand, Formulary and AMT (E, F, X)
     price_cols_all = [r[1] for r in con.execute(f"PRAGMA table_info('{price_tbl}')").fetchall()]
@@ -200,17 +212,16 @@ def main():
             WHERE rn = 1
         """
 
-    # 3.5 Build SELECT lists. If an alias appears in pm_aliases, skip the line-table version so the price-table value wins.
+    # 3.5 Build SELECT lists. If an alias appears in pm_aliases, skip the line-table version so the price-table value wins
     skip_aliases = set(pm_aliases.values())
     select_left = [f'l."{real}" AS "{alias}"' for (real, alias) in select_pairs if alias not in skip_aliases]
     pm_selects  = [f'pm."{src}" AS "{alias}"' for src, alias in pm_aliases.items()]
 
-    # ---- DEBUG: show exactly which columns will be used ----
+    # Debug prints for mapping traceability
     chosen_map = {alias: real for (real, alias) in select_pairs}
     print("LINE-TABLE MAPPING:", chosen_map)
     print("PRICE OVERRIDES  :", pm_aliases)
     print("Will skip aliases:", set(pm_aliases.values()))
-    # ---- END DEBUG ----
 
     left_select_clause = ", ".join(select_left + pm_selects) if pm_selects else ", ".join(select_left)
 
@@ -239,11 +250,11 @@ def main():
         print("No data returned. Check DB contents.", file=sys.stderr)
         sys.exit(1)
 
-    # ---- Normalize AMT punctuation safely (words-only commas) ----
+    # 3.7 Normalize AMT punctuation safely (words-only commas)
     if "AMT Trade Product Pack" in df.columns:
         df["AMT Trade Product Pack"] = df["AMT Trade Product Pack"].map(_normalize_amt_trade_pack)
 
-    # 3.7 Normalize identifiers and drop duplicates per month
+    # 3.8 Normalize identifiers and drop duplicates per month
     id_cols = [c for c in [
         "Item Code", "Legal Instrument Drug", "Legal Instrument Form",
         "Brand Name", "Formulary", "Responsible Person", "AMT Trade Product Pack"
@@ -252,12 +263,12 @@ def main():
     for c in id_cols:
         df[c] = (
             df[c].astype("string").fillna("")
-                 .str.replace("\u00A0", " ", regex=False)  # non-breaking spaces
+                 .str.replace("\u00A0", " ", regex=False)   # non-breaking spaces
                  .str.replace(r"\s+", " ", regex=True)      # collapse whitespace
                  .str.strip()
         )
 
-    # month key for dedup. keep the latest row in each month
+    # Month key for dedup. keep the latest row in each month
     df["__ym"] = pd.to_datetime(df["snapshot_date"]).dt.strftime("%Y-%m")
     df = (
         df.sort_values("snapshot_date")
@@ -265,7 +276,7 @@ def main():
           .drop(columns="__ym")
     )
 
-    # 3.8 Pivot wide using exactly the requested identifiers
+    # 3.9 Pivot wide using the requested identifiers
     df["snapshot_date"] = pd.to_datetime(df["snapshot_date"])
     df["MonthLabel"]    = df["snapshot_date"].dt.strftime("AEMP %b %y")
 
@@ -285,13 +296,13 @@ def main():
         .reset_index()
     )
 
-    # 3.9 Order month columns chronologically
+    # 3.10 Order month columns chronologically
     month_cols = [c for c in pt.columns if str(c).startswith("AEMP ")]
     def _mkey(lbl): return datetime.strptime(lbl.replace("AEMP ", ""), "%b %y")
     month_cols_sorted = sorted(month_cols, key=_mkey)
     pt = pt[left_export_headers + month_cols_sorted]
 
-    # 3.10 Write files
+    # 3.11 Write files
     csv_path  = os.path.join(out_dir, "aemp_fixed_wide.csv")
     xlsx_path = os.path.join(out_dir, "aemp_fixed_wide.xlsx")
     pt.to_csv(csv_path, index=False)
@@ -301,13 +312,16 @@ def main():
         except Exception as e:
             print(f"WARNING: Excel export failed ({e}). CSV was written.", file=sys.stderr)
 
-    # 3.10b Materialize EXACT copy into DuckDB for the viewer
+    # 3.12 Materialize exact copy into DuckDB for the viewer
     con.register("df_wide", pt)
     con.execute("CREATE OR REPLACE TABLE wide_fixed AS SELECT * FROM df_wide")
-    con.execute("CREATE OR REPLACE TABLE wide_fixed_meta AS SELECT CURRENT_TIMESTAMP AS built_at")
-    # (optional) con.unregister("df_wide")
+    con.execute("""
+        CREATE OR REPLACE TABLE wide_fixed_meta AS
+        SELECT CURRENT_TIMESTAMP AS built_at
+    """)
+    # con.unregister("df_wide")  # optional
 
-    # 3.11 Console summary
+    # 3.13 Console summary
     print("OK.")
     print("Detected:")
     print(f"  line_tbl  : {line_tbl}")
@@ -328,3 +342,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
