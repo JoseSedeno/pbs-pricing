@@ -312,7 +312,7 @@ if _grp_cols and "Formulary" in pt.columns:
     if len(bad):
         raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
 
-# Optional business rule (runs only if both columns exist)
+# Optional business rule
 if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
     ab = pt.loc[pt["Legal Instrument Drug"].str.lower()=="abacavir","Formulary"].dropna().unique().tolist()
     if len(ab) and any(x != "F2" for x in ab):
