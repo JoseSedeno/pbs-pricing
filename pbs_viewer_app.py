@@ -315,7 +315,7 @@ def ensure_db() -> Path:
       1) PBS_DB_PATH env var (absolute or relative)
       2) ./out/pbs_prices.duckdb (download from Drive if missing or forced)
 
-    You can force a re-download by setting env PBS_DB_FORCE=1.
+    Force a re-download by setting env PBS_DB_FORCE=1 for one run.
     """
     # 1) Env var override
     env = os.environ.get("PBS_DB_PATH")
@@ -332,8 +332,8 @@ def ensure_db() -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = (out_dir / "pbs_prices.duckdb").resolve()
 
-    # Force refresh if requested
-    force_refresh = os.environ.get("PBS_DB_FORCE", "").strip() in {"1", "true", "True"}
+    # Optional: force refresh
+    force_refresh = os.environ.get("PBS_DB_FORCE", "").strip().lower() in {"1", "true", "yes"}
     if force_refresh and db_path.exists():
         try:
             db_path.unlink()
@@ -344,7 +344,7 @@ def ensure_db() -> Path:
     # Download if missing
     if not db_path.exists():
         with st.spinner("Downloading database from Google Drive (first run only)…"):
-            # Make sure the linked Drive file is shared: Anyone with the link → Viewer
+            # Make sure this Drive file is shared: Anyone with link → Viewer
             url = "https://drive.google.com/uc?id=1tVpP0p3XdSPyzn_GEs6T_q7I1Zkk3Veb&export=download"
             gdown.download(url, str(db_path), quiet=False)
 
@@ -354,33 +354,36 @@ def ensure_db() -> Path:
         st.stop()
 
     # Basic size sanity check
-    min_bytes = 100 * 1024 * 1024  # 100 MB safety threshold
+    min_bytes = 100 * 1024 * 1024  # 100 MB
     size_bytes = db_path.stat().st_size
     st.caption(f"DB size: {size_bytes:,} bytes")
     if size_bytes < min_bytes:
-        st.error("Downloaded DB looks too small (likely an incomplete download).")
+        st.error("Downloaded DB looks too small (likely incomplete).")
         st.stop()
 
     # Schema sanity check (must contain wide_fixed + wide_fixed_meta)
     try:
-        import duckdb
         con_check = duckdb.connect(str(db_path), read_only=True)
-        have_wide  = con_check.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema='main' AND table_name='wide_fixed'"
-        ).fetchone()
-        have_meta  = con_check.execute(
-            "SELECT 1 FROM information_schema.tables "
-            "WHERE table_schema='main' AND table_name='wide_fixed_meta'"
-        ).fetchone()
+        have_wide = con_check.execute("""
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema='main' AND table_name='wide_fixed'
+        """).fetchone()
+        have_meta = con_check.execute("""
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_schema='main' AND table_name='wide_fixed_meta'
+        """).fetchone()
         con_check.close()
     except Exception as e:
         st.error(f"Could not open DuckDB file: {e}")
         st.stop()
 
     if not (have_wide and have_meta):
-        st.error("DB is missing required tables (wide_fixed / wide_fixed_meta). "
-                 "Rebuild locally with the exporter and upload the correct DB.")
+        st.error(
+            "DB is missing required tables (wide_fixed / wide_fixed_meta). "
+            "Rebuild locally with the exporter and upload a new version to Drive (same file ID)."
+        )
         st.stop()
 
     return db_path
