@@ -9,6 +9,46 @@ import gdown
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
+# ---- Simple auth gate (must be above any data code) ----
+from datetime import datetime
+
+_auth = st.secrets.get("auth", {})
+AUTH_NONCE = _auth.get("AUTH_NONCE", "")
+PASSWORDS = dict(_auth.get("PASSWORDS", {}))  # {client_id: password}
+
+def _is_authed() -> bool:
+    tok = st.session_state.get("auth_ticket")
+    return bool(tok and tok.get("nonce") == AUTH_NONCE and tok.get("client_id"))
+
+def _login_ui():
+    st.subheader("Secure login")
+    with st.form("login"):
+        client_id = st.text_input("Client ID")
+        pw = st.text_input("Password", type="password")
+        ok = st.form_submit_button("Sign in")
+    if ok:
+        if client_id in PASSWORDS and pw == PASSWORDS[client_id]:
+            st.session_state["auth_ticket"] = {
+                "client_id": client_id,
+                "nonce": AUTH_NONCE,
+                "ts": datetime.utcnow().isoformat(timespec="seconds"),
+            }
+            st.success("Signed in")
+            st.rerun()
+        else:
+            st.error("Invalid credentials")
+
+if not _is_authed():
+    _login_ui()
+    st.stop()
+
+with st.sidebar:
+    if _is_authed():
+        st.caption(f"Signed in as: {st.session_state['auth_ticket']['client_id']}")
+        if st.button("Logout"):
+            st.session_state.pop("auth_ticket", None)
+            st.rerun()
+
 def show_month_to_month_increases(con):
     # ---- Gate the whole section behind a sidebar toggle ----
     with st.sidebar:
