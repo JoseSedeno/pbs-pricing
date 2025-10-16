@@ -12,6 +12,22 @@ st.title("PBS AEMP Price Viewer")
 # ---- Simple auth gate (must be above any data code) ----
 from datetime import datetime, timezone
 
+# ---- Minimal access logger (CSV) ----
+_LOG_PATH = Path("out/access_log.csv")
+
+def _log_access(event: str, user: str):
+    try:
+        _LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        is_new = not _LOG_PATH.exists()
+        with _LOG_PATH.open("a", encoding="utf-8") as f:
+            if is_new:
+                f.write("ts_utc,event,user\n")
+            ts = datetime.now(timezone.utc).isoformat(timespec="seconds")
+            f.write(f"{ts},{event},{user}\n")
+    except Exception:
+        # logging must never break the app
+        pass
+
 _auth = st.secrets.get("auth", {})
 AUTH_NONCE = _auth.get("AUTH_NONCE", "")
 PASSWORDS = dict(_auth.get("PASSWORDS", {}))      # {client_id: password}
@@ -45,7 +61,6 @@ def _login_ui():
         cid = (client_id or "").strip()  # trim spaces
         # case-insensitive match for the ID
         lookup_id = cid if cid in PASSWORDS else next((k for k in PASSWORDS if k.lower() == cid.lower()), None)
-        st.sidebar.caption(f"DEBUG: lookup_id={lookup_id} | expires={EXPIRES.get(lookup_id)}")
 
         # expiry check (if configured)
         if lookup_id and _is_expired(lookup_id):
@@ -58,6 +73,7 @@ def _login_ui():
                 "nonce": AUTH_NONCE,
                 "ts": datetime.utcnow().isoformat(timespec="seconds"),
             }
+            _log_access("login", lookup_id)  # log successful sign-in
             st.success("Signed in")
             st.rerun()
         else:
@@ -69,8 +85,10 @@ if not _is_authed():
 
 with st.sidebar:
     if _is_authed():
-        st.caption(f"Signed in as: {st.session_state['auth_ticket']['client_id']}")
+        user = st.session_state['auth_ticket']['client_id']
+        st.caption(f"Signed in as: {user}")
         if st.button("Logout"):
+            _log_access("logout", user)     # log sign-out
             st.session_state.pop("auth_ticket", None)
             st.rerun()
 
