@@ -381,21 +381,21 @@ def ensure_db() -> Path:
         except Exception as e:
             st.warning(f"Could not remove existing DB: {e}")
 
-    # Download if missing
-if not db_path.exists():
-    with st.spinner("Downloading database from Google Drive (first run only)…"):
-        # Make sure this Drive file is shared: Anyone with link → Viewer
-        drive_id = st.secrets.get("drive", {}).get("DB_FILE_ID")
-        if not drive_id:
-            st.error("Missing [drive].DB_FILE_ID in Secrets.")
-            st.stop()
-        url = f"https://drive.google.com/uc?id={drive_id}"
-        gdown.download(url, str(db_path), quiet=False)
-
-    st.caption(f"DB path: {db_path}")
+        # Download if missing
     if not db_path.exists():
-        st.error("Database file not found after download.")
-        st.stop()
+        with st.spinner("Downloading database from Google Drive (first run only)…"):
+            # Make sure this Drive file is shared: Anyone with link → Viewer
+            drive_id = st.secrets.get("drive", {}).get("DB_FILE_ID")
+            if not drive_id:
+                st.error("Missing [drive].DB_FILE_ID in Secrets.")
+                st.stop()
+            url = f"https://drive.google.com/uc?id={drive_id}"
+            gdown.download(url, str(db_path), quiet=False)
+
+        st.caption(f"DB path: {db_path}")
+        if not db_path.exists():
+            st.error("Database file not found after download.")
+            st.stop()
 
     # Basic size sanity check
     min_bytes = 100 * 1024 * 1024  # 100 MB
