@@ -27,9 +27,13 @@ def _login_ui():
         pw = st.text_input("Password", type="password")
         ok = st.form_submit_button("Sign in")
     if ok:
-        if client_id in PASSWORDS and pw == PASSWORDS[client_id]:
+        cid = (client_id or "").strip()  # trim spaces
+        # case-insensitive match for the ID
+        lookup_id = cid if cid in PASSWORDS else next((k for k in PASSWORDS if k.lower() == cid.lower()), None)
+
+        if lookup_id and pw == PASSWORDS[lookup_id]:
             st.session_state["auth_ticket"] = {
-                "client_id": client_id,
+                "client_id": lookup_id,
                 "nonce": AUTH_NONCE,
                 "ts": datetime.utcnow().isoformat(timespec="seconds"),
             }
