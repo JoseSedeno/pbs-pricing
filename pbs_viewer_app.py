@@ -10,7 +10,7 @@ st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
 # ---- Simple auth gate (must be above any data code) ----
-from datetime import datetime
+from datetime import datetime, timezone
 
 _auth = st.secrets.get("auth", {})
 AUTH_NONCE = _auth.get("AUTH_NONCE", "")
