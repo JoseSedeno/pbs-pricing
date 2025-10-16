@@ -45,6 +45,7 @@ def _login_ui():
         cid = (client_id or "").strip()  # trim spaces
         # case-insensitive match for the ID
         lookup_id = cid if cid in PASSWORDS else next((k for k in PASSWORDS if k.lower() == cid.lower()), None)
+        st.sidebar.caption(f"DEBUG: lookup_id={lookup_id} | expires={EXPIRES.get(lookup_id)}")
 
         # expiry check (if configured)
         if lookup_id and _is_expired(lookup_id):
