@@ -14,11 +14,26 @@ from datetime import datetime, timezone
 
 _auth = st.secrets.get("auth", {})
 AUTH_NONCE = _auth.get("AUTH_NONCE", "")
-PASSWORDS = dict(_auth.get("PASSWORDS", {}))  # {client_id: password}
+PASSWORDS = dict(_auth.get("PASSWORDS", {}))      # {client_id: password}
+EXPIRES   = dict(_auth.get("EXPIRES_UTC", {}))    # {client_id: ISO8601 UTC string}
 
 def _is_authed() -> bool:
     tok = st.session_state.get("auth_ticket")
     return bool(tok and tok.get("nonce") == AUTH_NONCE and tok.get("client_id"))
+
+def _is_expired(client_id: str) -> bool:
+    exp = EXPIRES.get(client_id)
+    if not exp:
+        return False
+    try:
+        # Normalize: "Z" → "+00:00" and parse
+        exp_s = str(exp).strip().replace("Z", "+00:00")
+        dt = datetime.fromisoformat(exp_s)
+        if dt.tzinfo is None:
+            dt = dt.replace(tzinfo=timezone.utc)
+        return datetime.now(timezone.utc) > dt
+    except Exception:
+        return False
 
 def _login_ui():
     st.subheader("Secure login")
@@ -30,6 +45,11 @@ def _login_ui():
         cid = (client_id or "").strip()  # trim spaces
         # case-insensitive match for the ID
         lookup_id = cid if cid in PASSWORDS else next((k for k in PASSWORDS if k.lower() == cid.lower()), None)
+
+        # expiry check (if configured)
+        if lookup_id and _is_expired(lookup_id):
+            st.error("This trial account has expired. Please contact us for access.")
+            return
 
         if lookup_id and pw == PASSWORDS[lookup_id]:
             st.session_state["auth_ticket"] = {
