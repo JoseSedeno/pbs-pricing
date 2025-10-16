@@ -71,7 +71,7 @@ def _login_ui():
             st.session_state["auth_ticket"] = {
                 "client_id": lookup_id,
                 "nonce": AUTH_NONCE,
-                "ts": datetime.utcnow().isoformat(timespec="seconds"),
+                "ts": datetime.now(timezone.utc).isoformat(timespec="seconds"),
             }
             _log_access("login", lookup_id)  # log successful sign-in
             st.success("Signed in")
