@@ -465,30 +465,49 @@ def ensure_db(dataset: str) -> Path:
         st.error("Downloaded DB looks too small (likely wrong/incomplete file).")
         st.stop()
 
-    # Schema sanity check (must contain wide_fixed + wide_fixed_meta)
+    # Schema sanity check (dataset-aware)
     try:
         con_check = duckdb.connect(str(db_path), read_only=True)
-        have_wide = con_check.execute("""
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema='main' AND table_name='wide_fixed'
-        """).fetchone()
-        have_meta = con_check.execute("""
-            SELECT 1
-            FROM information_schema.tables
-            WHERE table_schema='main' AND table_name='wide_fixed_meta'
-        """).fetchone()
-        con_check.close()
+
+        if dataset == "Chemo EFC":
+            have_a = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='dim_product_line'
+            """).fetchone()
+            have_b = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='fact_monthly'
+            """).fetchone()
+            need_msg = "dim_product_line / fact_monthly"
+        else:
+            have_a = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='wide_fixed'
+            """).fetchone()
+            have_b = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='wide_fixed_meta'
+            """).fetchone()
+            need_msg = "wide_fixed / wide_fixed_meta"
+
+        ok_a = bool(have_a and have_a[0] == 1)
+        ok_b = bool(have_b and have_b[0] == 1)
+        if not (ok_a and ok_b):
+            st.error(f"DB is missing required tables ({need_msg}). "
+                     "Rebuild locally and upload a new version to Drive (same file ID).")
+            st.stop()
     except Exception as e:
         st.error(f"Could not open DuckDB file: {e}")
         st.stop()
-
-    if not (have_wide and have_meta):
-        st.error(
-            "DB is missing required tables (wide_fixed / wide_fixed_meta). "
-            "Rebuild locally with the exporter and upload a new version to Drive (same file ID)."
-        )
-        st.stop()
+    finally:
+        try:
+            con_check.close()
+        except Exception:
+            pass
 
     return db_path
 
@@ -501,20 +520,116 @@ except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
     
-# ---- Load the exact wide table produced by the exporter ----
+# ---- Load a wide table for BOTH datasets (PBS uses stored wide; Chemo builds on the fly) ----
 @st.cache_data(show_spinner=False)
 def load_wide_from_db(db_path: str, dataset: str):
     import os
-    mtime = os.path.getmtime(db_path)  # bust cache when DB is rebuilt
+    mtime = os.path.getmtime(db_path)
     con2 = duckdb.connect(str(db_path), read_only=True)
-    wide = con2.execute('SELECT * FROM wide_fixed').df()
-    try:
-        built_at = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()[0]
-    except Exception:
-        built_at = None
-    con2.close()
-    return wide, built_at, mtime
 
+    if dataset == "PBS AEMP":
+        wide = con2.execute('SELECT * FROM wide_fixed').df()
+        try:
+            built_at = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()[0]
+        except Exception:
+            built_at = None
+        con2.close()
+        return wide, built_at, mtime
+
+    # ---- Chemo EFC: build a PBS-compatible wide (AEMP by month) ----
+    # Column maps (pick only if present)
+    def _cols(tbl):
+        return {r[1].lower(): r[1] for r in con2.execute(f'PRAGMA table_info("{tbl}")').fetchall()}
+    def pick(cmap, *names):
+        for n in names:
+            if n and n.lower() in cmap:
+                return cmap[n.lower()]
+        return None
+
+    d = _cols("dim_product_line")
+    f = _cols("fact_monthly")
+
+    item_code   = pick(d, "item_code_b", "item_code")
+    form        = pick(d, "attr_c", "legal_instrument_form")
+    brand_line  = pick(d, "brand_name")
+    formulary_d = pick(d, "attr_f", "formulary")
+    resp_line   = pick(d, "responsible_person", "sponsor", "name_b")
+    brand_fm    = pick(f, "brand_name")
+    formulary_f = pick(f, "formulary")
+    resp_fm     = pick(f, "responsible_person", "sponsor", "responsible_person_name")
+    amt_fm      = pick(f, "amt_trade_product_pack", "amt_trade_pack")
+
+    sql = f"""
+        SELECT
+            d.product_line_id                                                AS product_line_id,
+            d.name_a                                                         AS "Legal Instrument Drug",
+            {('d."' + item_code   + '"') if item_code   else 'NULL'}         AS "Item Code",
+            {('d."' + form        + '"') if form        else 'NULL'}         AS "Legal Instrument Form",
+            COALESCE(CAST({('f."' + brand_fm    + '"') if brand_fm    else 'NULL'} AS VARCHAR),
+                     CAST({('d."' + brand_line  + '"') if brand_line  else 'NULL'} AS VARCHAR))  AS "Brand Name",
+            COALESCE(CAST({('d."' + formulary_d + '"') if formulary_d else 'NULL'} AS VARCHAR),
+                     CAST({('f."' + formulary_f + '"') if formulary_f else 'NULL'} AS VARCHAR))  AS _formulary_src,
+            COALESCE(CAST({('d."' + resp_line   + '"') if resp_line   else 'NULL'} AS VARCHAR),
+                     CAST({('f."' + resp_fm     + '"') if resp_fm     else 'NULL'} AS VARCHAR))  AS "Responsible Person",
+            {('f."' + amt_fm + '"') if amt_fm else 'NULL'}                  AS "AMT Trade Product Pack",
+            DATE_TRUNC('month', f.snapshot_date)::DATE                       AS month,
+            CAST(f.aemp AS DOUBLE)                                           AS aemp
+        FROM fact_monthly f
+        JOIN dim_product_line d USING (product_line_id)
+    """
+    long_df = con2.execute(sql).df()
+    con2.close()
+
+    if long_df.empty:
+        return pd.DataFrame(), None, mtime
+
+    def _norm_formulary(x):
+        if x is None: return None
+        s = str(x).strip()
+        if s in ("1","F1"):  return "F1"
+        if s in ("60","F2"): return "F2"
+        if s.upper() == "CDL": return "CDL"
+        return s or None
+
+    long_df["Formulary"] = long_df["_formulary_src"].map(_norm_formulary)
+    long_df.drop(columns=["_formulary_src"], inplace=True)
+    long_df["month_label"] = pd.to_datetime(long_df["month"]).dt.strftime("AEMP %b %y")
+
+    id_cols = [
+        "Item Code","Legal Instrument Drug","Legal Instrument Form",
+        "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack",
+    ]
+    wide = (
+        long_df
+        .pivot_table(index=id_cols, columns="month_label", values="aemp", aggfunc="mean")
+        .reset_index()
+    )
+    mcols = sorted(
+        [c for c in wide.columns if c.startswith("AEMP ")],
+        key=lambda c: pd.to_datetime(c.replace("AEMP ",""), format="%b %y", errors="coerce")
+    )
+    wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
+    return wide, None, mtime
+
+    long_df["Formulary"] = long_df["_formulary_src"].map(_norm_formulary)
+    long_df.drop(columns=["_formulary_src"], inplace=True)
+    long_df["month_label"] = pd.to_datetime(long_df["month"]).dt.strftime("AEMP %b %y")
+
+    id_cols = [
+        "Item Code","Legal Instrument Drug","Legal Instrument Form",
+        "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack",
+    ]
+    wide = (
+        long_df
+        .pivot_table(index=id_cols, columns="month_label", values="aemp", aggfunc="mean")
+        .reset_index()
+    )
+    mcols = sorted([c for c in wide.columns if c.startswith("AEMP ")],
+                   key=lambda c: pd.to_datetime(c.replace("AEMP ",""), format="%b %y", errors="coerce"))
+    wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
+    return wide, None, mtime
+
+# Use the unified loader
 df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH), dataset)
 if wide_built_at:
     st.caption(f"Wide table built at: {wide_built_at}")
