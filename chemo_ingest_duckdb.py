@@ -90,7 +90,6 @@ def find_col(cols, aliases):
     return None
 
 # --------- Header matching (by NAME, not letter) ----------
-# Keep aliases strict — especially for "Formulary" so we don't grab any *Quantity* column by mistake.
 REQUIRED = {
     "Item Code": ["item code"],
     "Legal Instrument Drug": ["legal instrument drug", "drug name"],
@@ -124,7 +123,7 @@ def main():
     input_dir = args.input_dir
     output_dir = args.output_dir
     os.makedirs(output_dir, exist_ok=True)
-    db_path = os.path.join(output_dir, "pbs_prices.duckdb")
+    db_path = os.path.join(output_dir, "chemo_prices.duckdb")
 
     con = duckdb.connect(db_path)
 
