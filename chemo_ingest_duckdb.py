@@ -3,7 +3,7 @@
 PBS Ingest to DuckDB (AEMP-centric, variant-aware, snapshot attributes kept)
 
 What this does
-- Reads all files matching: ex-manufacturer-prices-non-efc-YYYY-MM-DD.xlsx
+- Reads all files matching: ex-manufacturer-prices-efc-YYYY-MM-DD.xlsx
 - Uses header NAMES (robust to column reordering) to find fields:
     Item Code, Legal Instrument Drug, Legal Instrument Form, Formulary, Program,
     Pack Quantity, AEMP, plus extra snapshot attributes:
@@ -69,7 +69,7 @@ def safe_concat(x, y, sep="_"):
     return x or y
 
 def parse_date_from_filename(fname: str):
-    m = re.search(r"ex-manufacturer-prices-non-efc-(\d{4}-\d{2}-\d{2})\.xlsx$", fname, flags=re.IGNORECASE)
+    m = re.search(r"ex-manufacturer-prices-efc-(\d{4}-\d{2}-\d{2})\.xlsx$", fname, flags=re.IGNORECASE)
     if m:
         return pd.to_datetime(m.group(1)).date()
     return None
@@ -117,7 +117,7 @@ OPTIONAL = {
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_dir", required=True, help='Folder with "ex-manufacturer-prices-non-efc-*.xlsx"')
+    ap.add_argument("--input_dir", required=True, help='Folder with "ex-manufacturer-prices-efc-*.xlsx"')
     ap.add_argument("--output_dir", required=True, help="Folder to write DuckDB file")
     args = ap.parse_args()
 
@@ -177,7 +177,7 @@ def main():
     con.execute("CREATE INDEX IF NOT EXISTS idx_dpl_base ON dim_product_line(name_a, item_code_b, attr_c, attr_f, attr_g, attr_j);")
     con.execute("CREATE INDEX IF NOT EXISTS idx_fm_line_date ON fact_monthly(product_line_id, snapshot_date);")
 
-    files = sorted(glob.glob(os.path.join(input_dir, "ex-manufacturer-prices-non-efc-*.xlsx")))
+    files = sorted(glob.glob(os.path.join(input_dir, "ex-manufacturer-prices-efc-*.xlsx")))
     if not files:
         print("No files found in", input_dir)
         return
