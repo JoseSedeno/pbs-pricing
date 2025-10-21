@@ -9,6 +9,16 @@ import gdown
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
+# ---- Dataset selector ----
+with st.sidebar:
+    dataset = st.radio("Dataset", ["PBS AEMP", "Chemo EFC"], index=0)
+    
+# Map label -> (local filename, Streamlit secrets key)
+DATASET_MAP = {
+    "PBS AEMP": ("pbs_prices.duckdb", "DB_FILE_ID"),
+    "Chemo EFC": ("chemo_prices.duckdb", "CHEMO_DB_FILE_ID"),
+}
+
 # ---- Simple auth gate (must be above any data code) ----
 from datetime import datetime, timezone
 
@@ -392,48 +402,49 @@ def show_month_to_month_decreases(con):
     )
 
 # ---- Page setup ----
-def ensure_db() -> Path:
+def ensure_db(dataset: str) -> Path:
     """
-    Use a local DuckDB. Order of preference:
-      1) PBS_DB_PATH env var (absolute or relative)
-      2) ./out/pbs_prices.duckdb (download from Drive if missing or forced)
+    Resolve a local DuckDB path for the selected dataset, downloading from Drive if missing.
+    Env var overrides:
+      - PBS_DB_PATH / PBS_DB_FORCE for "PBS AEMP"
+      - CHEMO_DB_PATH / CHEMO_DB_FORCE for "Chemo EFC"
+    """
+    filename, id_key = DATASET_MAP[dataset]
+    env_var = "PBS_DB_PATH" if dataset == "PBS AEMP" else "CHEMO_DB_PATH"
+    force_var = "PBS_DB_FORCE" if dataset == "PBS AEMP" else "CHEMO_DB_FORCE"
 
-    Force a re-download by setting env PBS_DB_FORCE=1 for one run.
-    """
     # 1) Env var override
-    env = os.environ.get("PBS_DB_PATH")
+    env = os.environ.get(env_var)
     if env:
         p = Path(env).expanduser().resolve()
         if p.exists() and p.stat().st_size > 1024:
-            st.caption(f"Using DB (PBS_DB_PATH): {p}")
+            st.caption(f"Using DB ({env_var}): {p}")
             return p
         else:
-            st.warning(f"PBS_DB_PATH set but file missing/small: {p}")
+            st.warning(f"{env_var} set but file missing/small: {p}")
 
     # 2) Local ./out path
     out_dir = Path("out")
     out_dir.mkdir(parents=True, exist_ok=True)
-    db_path = (out_dir / "pbs_prices.duckdb").resolve()
+    db_path = (out_dir / filename).resolve()
 
     # Optional: force refresh
-    force_refresh = os.environ.get("PBS_DB_FORCE", "").strip().lower() in {"1", "true", "yes"}
+    force_refresh = os.environ.get(force_var, "").strip().lower() in {"1", "true", "yes"}
     if force_refresh and db_path.exists():
         try:
             db_path.unlink()
-            st.caption("Removed existing local DB (PBS_DB_FORCE=1).")
+            st.caption(f"Removed existing local DB ({force_var}=1).")
         except Exception as e:
             st.warning(f"Could not remove existing DB: {e}")
-    
+
     # Download if missing
     if not db_path.exists():
-        with st.spinner("Downloading database from Google Drive (first run only)…"):
-            # Make sure this Drive file is shared: Anyone with link → Viewer
-            drive_id = st.secrets.get("drive", {}).get("DB_FILE_ID")
-            if not drive_id:
-                st.error("Missing [drive].DB_FILE_ID in Secrets.")
-                st.stop()
+        drive_id = st.secrets.get("drive", {}).get(id_key)
+        if not drive_id:
+            st.error(f"Missing [drive].{id_key} in Secrets.")
+            st.stop()
 
-            # Use gdown with the Drive ID directly to avoid interstitials
+        with st.spinner(f"Downloading {dataset} database from Google Drive…"):
             gdown.download(id=drive_id, output=str(db_path), quiet=False)
 
         st.caption(f"DB path: {db_path}")
@@ -476,7 +487,7 @@ def ensure_db() -> Path:
 
     return db_path
 
-DB_PATH = ensure_db()
+DB_PATH = ensure_db(dataset)
 
 # ---- Open DuckDB ----
 try:
@@ -487,19 +498,19 @@ except Exception as e:
     
 # ---- Load the exact wide table produced by the exporter ----
 @st.cache_data(show_spinner=False)
-def load_wide_from_db(db_path: str):
+def load_wide_from_db(db_path: str, dataset: str):
     import os
     mtime = os.path.getmtime(db_path)  # bust cache when DB is rebuilt
     con2 = duckdb.connect(str(db_path), read_only=True)
-    df = con2.execute('SELECT * FROM wide_fixed').df()
+    wide = con2.execute('SELECT * FROM wide_fixed').df()
     try:
         built_at = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()[0]
     except Exception:
         built_at = None
     con2.close()
-    return df, built_at, mtime
+    return wide, built_at, mtime
 
-df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH))
+df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH), dataset)
 if wide_built_at:
     st.caption(f"Wide table built at: {wide_built_at}")
 
