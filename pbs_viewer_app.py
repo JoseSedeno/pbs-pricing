@@ -452,12 +452,17 @@ def ensure_db(dataset: str) -> Path:
             st.error("Database file not found after download.")
             st.stop()
 
-    # Basic size sanity check
-    min_bytes = 100 * 1024 * 1024  # 100 MB
-    size_bytes = db_path.stat().st_size
+    # Basic size sanity check (chemo DBs are small but should be > ~1 MB)
+    min_bytes = 1 * 1024 * 1024  # 1 MB
+    try:
+        size_bytes = db_path.stat().st_size
+    except FileNotFoundError:
+        st.error("Database file not found after download.")
+        st.stop()
+
     st.caption(f"DB size: {size_bytes:,} bytes")
     if size_bytes < min_bytes:
-        st.error("Downloaded DB looks too small (likely incomplete).")
+        st.error("Downloaded DB looks too small (likely wrong/incomplete file).")
         st.stop()
 
     # Schema sanity check (must contain wide_fixed + wide_fixed_meta)
