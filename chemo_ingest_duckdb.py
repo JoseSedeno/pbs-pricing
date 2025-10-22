@@ -98,7 +98,7 @@ OPTIONAL = {
     "Premium": ["premium"],
 }
 
-# Identity columns (full set you requested)
+# Identity columns (full set)
 CHEMO_IDENTITY_COLS = [
     "Item Code",
     "Legal Instrument Drug",
@@ -157,6 +157,7 @@ def main():
     files = sorted(glob.glob(pattern))
     if not files:
         print(f"No files found in {input_dir}")
+        con.close()
         return
 
     # ---------- Tables ----------
@@ -232,17 +233,13 @@ def main():
     con.execute("CREATE INDEX IF NOT EXISTS idx_dpl_base ON dim_product_line(name_a, item_code_b, attr_c, attr_f, attr_g, attr_j);")
     con.execute("CREATE INDEX IF NOT EXISTS idx_fm_line_date ON fact_monthly(product_line_id, snapshot_date);")
 
-    files = sorted(glob.glob(os.path.join(input_dir, "ex-manufacturer-prices-efc-*.xlsx")))
-    if not files:
-        print("No files found in", input_dir)
-        return
-
     problems = []
     total_rows = 0
 
     for f in files:
+        tmp_registered = False
         try:
-            df = pd.read_excel(f, sheet_name=0, dtype=str)
+            df = pd.read_excel(f, sheet_name=0, dtype=str)  # optionally: engine="openpyxl"
             cols = list(df.columns)
 
             # Required & optional map
@@ -292,7 +289,7 @@ def main():
                 if c in sub.columns:
                     sub[c] = sub[c].map(normalize_punct)
 
-            # Price metrics → numeric *_num (will be NaN if missing in the source)
+            # Price metrics → numeric *_num (NaN if missing in the source)
             for price_col in PRICE_METRICS:
                 if price_col in sub.columns:
                     sub[price_col] = sub[price_col].astype(str).str.replace(",", "", regex=False).str.strip()
@@ -359,6 +356,7 @@ def main():
 
             # Register for SQL inserts
             con.register("tmp_sub", sub_distinct)
+            tmp_registered = True
 
             # Insert NEW variants into dim_product_line
             con.execute("""
@@ -420,7 +418,7 @@ def main():
             """)
 
             # Insert monthly facts with all metrics (NO blacklist filter; blanks remain as NULLs)
-            con.execute(f"""
+            con.execute("""
             INSERT INTO fact_monthly (
                 product_line_id, snapshot_date,
                 aemp, pemp, exman_price_per_vial, dpma, claimed_price_pack, claimed_price_vial, claimed_dpma, premium,
@@ -467,12 +465,17 @@ def main():
             """)
 
             total_rows += len(sub)
-            con.unregister("tmp_sub")
             print("    inserted (this file): OK")
 
         except Exception as e:
             problems.append(f"{os.path.basename(f)} error: {e}")
             print("    ERROR:", e)
+        finally:
+            if tmp_registered:
+                try:
+                    con.unregister("tmp_sub")
+                except Exception:
+                    pass
 
     # Summary
     total_lines = con.execute("SELECT COUNT(*) FROM dim_product_line").fetchone()[0]
@@ -486,6 +489,8 @@ def main():
         print("Problems:")
         for p in problems:
             print(" -", p)
+
+    con.close()
 
 if __name__ == "__main__":
     main()
