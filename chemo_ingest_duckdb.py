@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Chemo EFC → DuckDB (variant-aware, multi-metric prices)
+Chemo EFC -> DuckDB (variant-aware, multi-metric prices)
 
 Reads files named ex-manufacturer-prices-efc-YYYY-MM-DD.xlsx (any case).
-Creates/updates:
+Creates or updates:
   - dim_product_line
   - fact_monthly (AEMP, PEMP, Ex-man Price per Vial, DPMA, Claimed Price for Pack, Claimed Price for vial, Claimed DPMA, Premium)
   - ingest_collisions (diagnostics)
@@ -23,12 +23,14 @@ def normalize_punct(s):
     s = re.sub(r",\s*,+", ",", s)
     s = re.sub(r"\s*,\s*", ", ", s)
     s = re.sub(r"\s+", " ", s)
-    return s.strip() or None
+    s = s.strip()
+    return s or None
 
 def normalize_text(s):
     if s is None or (isinstance(s, float) and pd.isna(s)):
         return None
-    return re.sub(r"\s+", " ", str(s).strip()) or None
+    s = re.sub(r"\s+", " ", str(s).strip())
+    return s or None
 
 def safe_concat(x, y, sep="_"):
     x = (x or "").strip()
@@ -40,7 +42,7 @@ def safe_concat(x, y, sep="_"):
 def parse_date_from_filename(fname: str):
     m = re.search(r"ex-manufacturer-prices-efc-(\d{4}-\d{2}-\d{2})\.xlsx$", fname, flags=re.IGNORECASE)
     if m:
-        return pd.to_datetime(m.group(1)).date()
+        return pd.to_datetime(m.group(1), errors="coerce").date()
     return None
 
 def find_col(cols, aliases):
@@ -239,6 +241,8 @@ def main():
             # Normalize identity text
             for c in CHEMO_IDENTITY_COLS:
                 sub[c] = sub[c].map(normalize_text)
+
+            # Punctuation normalization on key descriptive fields
             for c in [
                 "Item Code","Legal Instrument Drug","Legal Instrument Form","Legal Instrument MoA",
                 "Brand Name","Formulary","Program","Manufacturer Code","Responsible Person",
@@ -251,10 +255,16 @@ def main():
             # Guarantee *_num columns EXIST for every metric (even if the metric column is missing)
             for price_col in PRICE_METRICS:
                 if price_col in sub.columns:
-                    clean = sub[price_col].astype(str).str.replace(",", "", regex=False).str.strip()
+                    clean = (
+                        sub[price_col]
+                        .astype(str)
+                        .str.replace(",", "", regex=False)
+                        .str.replace("$", "", regex=False)
+                        .str.strip()
+                    )
                     sub[price_col + "_num"] = pd.to_numeric(clean, errors="coerce")
                 else:
-                    sub[price_col + "_num"] = pd.NA  # ensures SQL SELECT finds the column
+                    sub[price_col + "_num"] = pd.NA
 
             # Snapshot info
             snapshot_date = parse_date_from_filename(os.path.basename(f))
@@ -272,30 +282,42 @@ def main():
             # Key parts must exist
             sub = sub.dropna(subset=["Legal Instrument Drug", "Item Code", "SnapshotDate"])
 
-            # Variant signature (one string per row)
-            exclude = set([m for m in PRICE_METRICS] +
-                          [m + "_num" for m in PRICE_METRICS] +
-                          ["SnapshotDate", "SourceFile"])
+            # -------- Variant signature (one string per row) --------
+            exclude = set(
+                [m for m in PRICE_METRICS] +
+                [m + "_num" for m in PRICE_METRICS] +
+                ["SnapshotDate", "SourceFile"]
+            )
+
+            # keep only non-excluded columns, de-dup order, stringify, and join per row
             sig_cols = [c for c in sub.columns if c not in exclude]
-            sig_cols = list(dict.fromkeys(sig_cols))  # de-dup just in case
+            sig_cols = list(dict.fromkeys(sig_cols))  # preserve order, remove dups
             sig_view = sub.loc[:, sig_cols].fillna("").astype(str)
             sub["variant_signature_base"] = sig_view.agg(" | ".join, axis=1)
 
-            # Minimal distinct rows carried forward
+            # -------- Minimal distinct rows carried forward --------
             base_cols = CHEMO_IDENTITY_COLS
-            cols_to_keep = base_cols + ["SourceFile","SnapshotDate","amt_pack_program","variant_signature_base"]
+            cols_to_keep = base_cols + ["SourceFile", "SnapshotDate", "amt_pack_program", "variant_signature_base"]
             for m in PRICE_METRICS:
-                cols_to_keep.append(m + "_num")
+                if m + "_num" in sub.columns:
+                    cols_to_keep.append(m + "_num")
+
             existing_cols = [c for c in cols_to_keep if c in sub.columns]
             sub_distinct = sub[existing_cols].drop_duplicates()
+
+            # Ensure all *_num metric columns exist so downstream SQL can reference them
+            for m in PRICE_METRICS:
+                col = m + "_num"
+                if col not in sub_distinct.columns:
+                    sub_distinct[col] = pd.NA
 
             # Collisions (AEMP)
             if "AEMP_num" in sub_distinct.columns:
                 collisions = (
                     sub_distinct.groupby(base_cols + ["variant_signature_base","SnapshotDate","SourceFile"])["AEMP_num"]
-                    .agg(["nunique", lambda s: ", ".join(sorted({f"{v:.6f}" for v in s if pd.notna(v)}))])
+                    .agg(distinct_aemps="nunique",
+                         example_aemps=lambda s: ", ".join(sorted({f"{v:.6f}" for v in s if pd.notna(v)})))
                     .reset_index()
-                    .rename(columns={"nunique":"distinct_aemps","<lambda_0>":"example_aemps"})
                 )
                 coll_to_log = collisions[collisions["distinct_aemps"] > 1].copy()
                 if not coll_to_log.empty:
