@@ -130,19 +130,34 @@ PRICE_METRICS = [
 ]
 
 # ---------- Main ----------
-
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--input_dir", required=True, help='Folder with "ex-manufacturer-prices-efc-*.xlsx"')
-    ap.add_argument("--output_dir", required=True, help="Folder to write DuckDB file (chemo_prices.duckdb)")
+    ap.add_argument(
+        "--input_dir",
+        required=True,
+        help='Folder with "ex-manufacturer-prices-efc-*.xlsx"',
+    )
+    ap.add_argument(
+        "--output_dir",
+        required=True,
+        help="Folder to write DuckDB file (chemo_prices.duckdb)",
+    )
     args = ap.parse_args()
 
-    input_dir = args.input_dir
-    output_dir = args.output_dir
+    # Normalize paths (handles ~ and mixed slashes)
+    input_dir = os.path.expanduser(os.path.normpath(args.input_dir))
+    output_dir = os.path.expanduser(os.path.normpath(args.output_dir))
     os.makedirs(output_dir, exist_ok=True)
-    db_path = os.path.join(output_dir, "chemo_prices.duckdb")
 
+    db_path = os.path.join(output_dir, "chemo_prices.duckdb")
     con = duckdb.connect(db_path)
+
+    # Case-insensitive match for .xlsx / .XLSX
+    pattern = os.path.join(input_dir, "ex-manufacturer-prices-efc-*.[xX][lL][sS][xX]")
+    files = sorted(glob.glob(pattern))
+    if not files:
+        print(f"No files found in {input_dir}")
+        return
 
     # ---------- Tables ----------
     con.execute("""
@@ -474,5 +489,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
