@@ -17,6 +17,7 @@ Creates/updates:
   - dim_product_line
   - fact_monthly (with all the metrics above)
   - ingest_collisions (diagnostics)
+  - data_issues (optional notes; not used to filter)
 """
 
 import os, re, glob, argparse
@@ -97,7 +98,7 @@ OPTIONAL = {
     "Premium": ["premium"],
 }
 
-# Chemo identity (left side) – your exact list
+# Identity columns (full set you requested)
 CHEMO_IDENTITY_COLS = [
     "Item Code",
     "Legal Instrument Drug",
@@ -176,7 +177,7 @@ def main():
         claimed_dpma DECIMAL(18,6),
         premium DECIMAL(18,6),
         source_file TEXT,
-        -- snapshot attributes (kept for convenience in queries/exports)
+        -- snapshot attributes
         moa TEXT,
         brand_name TEXT,
         manufacturer_code TEXT,
@@ -197,6 +198,19 @@ def main():
         distinct_aemps INTEGER,
         example_aemps TEXT,
         source_file TEXT
+    );
+    """)
+
+    # Optional notes/blacklist table (not used to filter in this version)
+    con.execute("""
+    CREATE TABLE IF NOT EXISTS data_issues (
+        scope TEXT NOT NULL,
+        product_line_id INTEGER NOT NULL DEFAULT -1,
+        snapshot_date DATE NOT NULL,
+        reason TEXT,
+        added_at TIMESTAMP DEFAULT now(),
+        added_by TEXT DEFAULT 'admin',
+        PRIMARY KEY (scope, product_line_id, snapshot_date)
     );
     """)
 
@@ -263,7 +277,7 @@ def main():
                 if c in sub.columns:
                     sub[c] = sub[c].map(normalize_punct)
 
-            # Price metrics → numeric *_num
+            # Price metrics → numeric *_num (will be NaN if missing in the source)
             for price_col in PRICE_METRICS:
                 if price_col in sub.columns:
                     sub[price_col] = sub[price_col].astype(str).str.replace(",", "", regex=False).str.strip()
@@ -294,7 +308,7 @@ def main():
             sig_df = sub[sig_cols].fillna("").astype(str)
             sub["variant_signature_base"] = sig_df.apply(lambda r: " | ".join(r.values.tolist()), axis=1)
 
-            # Keep distinct numeric rows (we allow no AEMP if other metrics exist)
+            # Keep distinct rows (allow missing AEMP; keep any metric present)
             cols_to_keep = base_cols + ["SourceFile","SnapshotDate","amt_pack_program","variant_signature_base"]
             for m in PRICE_METRICS:
                 if m + "_num" in sub.columns:
@@ -303,7 +317,7 @@ def main():
             existing_cols = [c for c in cols_to_keep if c in sub.columns]
             sub_distinct = sub[existing_cols].drop_duplicates()
 
-            # Collisions (distinct AEMP values within same base+date) – optional, still useful
+            # Collisions (distinct AEMP values within same base+date) – optional
             if "AEMP_num" in sub_distinct.columns:
                 collisions = (
                     sub_distinct.groupby(base_cols + ["variant_signature_base","SnapshotDate","SourceFile"])["AEMP_num"]
@@ -331,7 +345,7 @@ def main():
             # Register for SQL inserts
             con.register("tmp_sub", sub_distinct)
 
-            # Insert NEW variants into dim_product_line (same pattern as PBS)
+            # Insert NEW variants into dim_product_line
             con.execute("""
             INSERT INTO dim_product_line (
                 product_line_id, item_code_b, name_a, attr_c, attr_f, attr_g, attr_j,
@@ -390,7 +404,7 @@ def main():
             WHERE d.product_line_id IS NULL;
             """)
 
-            # Insert monthly facts with all metrics
+            # Insert monthly facts with all metrics (NO blacklist filter; blanks remain as NULLs)
             con.execute(f"""
             INSERT INTO fact_monthly (
                 product_line_id, snapshot_date,
@@ -460,3 +474,5 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
