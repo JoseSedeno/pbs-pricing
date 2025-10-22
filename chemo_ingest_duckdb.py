@@ -2,22 +2,11 @@
 """
 Chemo EFC → DuckDB (variant-aware, multi-metric prices)
 
-Files: ex-manufacturer-prices-efc-YYYY-MM-DD.xlsx
-Identity (left side):
-  Item Code, Legal Instrument Drug, Legal Instrument Form, Legal Instrument MoA,
-  Brand Name, Formulary, Program, Manufacturer Code, Responsible Person,
-  Pack Quantity, Pricing Quantity, Vial Content, Maximum Amount, Number Repeats,
-  AMT Trade Product Pack
-
-Metrics (per month):
-  AEMP, PEMP, Ex-man Price per Vial, DPMA,
-  Claimed Price for Pack, Claimed Price for vial, Claimed DPMA, Premium
-
+Reads files named ex-manufacturer-prices-efc-YYYY-MM-DD.xlsx (any case).
 Creates/updates:
   - dim_product_line
-  - fact_monthly (with all the metrics above)
+  - fact_monthly (AEMP, PEMP, Ex-man Price per Vial, DPMA, Claimed Price for Pack, Claimed Price for vial, Claimed DPMA, Premium)
   - ingest_collisions (diagnostics)
-  - data_issues (optional notes; not used to filter)
 """
 
 import os, re, glob, argparse
@@ -77,7 +66,6 @@ REQUIRED = {
     "AEMP": ["aemp"],
 }
 
-# Optional / identity fields + price metric aliases
 OPTIONAL = {
     "Legal Instrument MoA": ["legal instrument moa", "moa"],
     "Brand Name": ["brand name", "brand"],
@@ -98,7 +86,6 @@ OPTIONAL = {
     "Premium": ["premium"],
 }
 
-# Identity columns (full set)
 CHEMO_IDENTITY_COLS = [
     "Item Code",
     "Legal Instrument Drug",
@@ -117,7 +104,6 @@ CHEMO_IDENTITY_COLS = [
     "AMT Trade Product Pack",
 ]
 
-# Metrics we will parse & store (numeric)
 PRICE_METRICS = [
     "AEMP",
     "PEMP",
@@ -132,19 +118,11 @@ PRICE_METRICS = [
 # ---------- Main ----------
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument(
-        "--input_dir",
-        required=True,
-        help='Folder with "ex-manufacturer-prices-efc-*.xlsx"',
-    )
-    ap.add_argument(
-        "--output_dir",
-        required=True,
-        help="Folder to write DuckDB file (chemo_prices.duckdb)",
-    )
+    ap.add_argument("--input_dir", required=True, help='Folder with "ex-manufacturer-prices-efc-*.xlsx"')
+    ap.add_argument("--output_dir", required=True, help="Folder to write DuckDB file (chemo_prices.duckdb)")
     args = ap.parse_args()
 
-    # Normalize paths (handles ~ and mixed slashes)
+    # Normalize paths
     input_dir = os.path.expanduser(os.path.normpath(args.input_dir))
     output_dir = os.path.expanduser(os.path.normpath(args.output_dir))
     os.makedirs(output_dir, exist_ok=True)
@@ -152,12 +130,10 @@ def main():
     db_path = os.path.join(output_dir, "chemo_prices.duckdb")
     con = duckdb.connect(db_path)
 
-    # Case-insensitive match for .xlsx / .XLSX
-    pattern = os.path.join(input_dir, "ex-manufacturer-prices-efc-*.[xX][lL][sS][xX]")
-    files = sorted(glob.glob(pattern))
+    # Case-insensitive .xlsx pattern
+    files = sorted(glob.glob(os.path.join(input_dir, "ex-manufacturer-prices-efc-*.[xX][lL][sS][xX]")))
     if not files:
         print(f"No files found in {input_dir}")
-        con.close()
         return
 
     # ---------- Tables ----------
@@ -166,7 +142,7 @@ def main():
         product_line_id INTEGER PRIMARY KEY,
         item_code_b TEXT NOT NULL,
         name_a TEXT NOT NULL,
-        attr_c TEXT,
+        attr_c TEXT,              -- Legal Instrument Form
         attr_f TEXT,              -- Formulary
         attr_g TEXT,              -- Program
         attr_j TEXT,              -- Pack Quantity
@@ -183,7 +159,6 @@ def main():
     CREATE TABLE IF NOT EXISTS fact_monthly (
         product_line_id INTEGER NOT NULL,
         snapshot_date DATE NOT NULL,
-        -- metrics
         aemp DECIMAL(18,6),
         pemp DECIMAL(18,6),
         exman_price_per_vial DECIMAL(18,6),
@@ -193,7 +168,7 @@ def main():
         claimed_dpma DECIMAL(18,6),
         premium DECIMAL(18,6),
         source_file TEXT,
-        -- snapshot attributes
+        -- snapshot attributes (for convenience)
         moa TEXT,
         brand_name TEXT,
         manufacturer_code TEXT,
@@ -217,19 +192,6 @@ def main():
     );
     """)
 
-    # Optional notes/blacklist table (not used to filter in this version)
-    con.execute("""
-    CREATE TABLE IF NOT EXISTS data_issues (
-        scope TEXT NOT NULL,
-        product_line_id INTEGER NOT NULL DEFAULT -1,
-        snapshot_date DATE NOT NULL,
-        reason TEXT,
-        added_at TIMESTAMP DEFAULT now(),
-        added_by TEXT DEFAULT 'admin',
-        PRIMARY KEY (scope, product_line_id, snapshot_date)
-    );
-    """)
-
     con.execute("CREATE INDEX IF NOT EXISTS idx_dpl_base ON dim_product_line(name_a, item_code_b, attr_c, attr_f, attr_g, attr_j);")
     con.execute("CREATE INDEX IF NOT EXISTS idx_fm_line_date ON fact_monthly(product_line_id, snapshot_date);")
 
@@ -237,12 +199,11 @@ def main():
     total_rows = 0
 
     for f in files:
-        tmp_registered = False
         try:
-            df = pd.read_excel(f, sheet_name=0, dtype=str)  # optionally: engine="openpyxl"
+            df = pd.read_excel(f, sheet_name=0, dtype=str)
             cols = list(df.columns)
 
-            # Required & optional map
+            # Header maps
             req_map = {need: find_col(cols, aliases) for need, aliases in REQUIRED.items()}
             missing = [k for k, v in req_map.items() if v is None]
             print(f"\n>>> {os.path.basename(f)}")
@@ -275,11 +236,9 @@ def main():
                 if c not in sub.columns:
                     sub[c] = pd.NA
 
-            # Normalize text
+            # Normalize identity text
             for c in CHEMO_IDENTITY_COLS:
                 sub[c] = sub[c].map(normalize_text)
-
-            # Also normalize punctuation on identifier-ish fields
             for c in [
                 "Item Code","Legal Instrument Drug","Legal Instrument Form","Legal Instrument MoA",
                 "Brand Name","Formulary","Program","Manufacturer Code","Responsible Person",
@@ -289,11 +248,13 @@ def main():
                 if c in sub.columns:
                     sub[c] = sub[c].map(normalize_punct)
 
-            # Price metrics → numeric *_num (NaN if missing in the source)
+            # Guarantee *_num columns EXIST for every metric (even if the metric column is missing)
             for price_col in PRICE_METRICS:
                 if price_col in sub.columns:
-                    sub[price_col] = sub[price_col].astype(str).str.replace(",", "", regex=False).str.strip()
-                    sub[price_col + "_num"] = pd.to_numeric(sub[price_col], errors="coerce")
+                    clean = sub[price_col].astype(str).str.replace(",", "", regex=False).str.strip()
+                    sub[price_col + "_num"] = pd.to_numeric(clean, errors="coerce")
+                else:
+                    sub[price_col + "_num"] = pd.NA  # ensures SQL SELECT finds the column
 
             # Snapshot info
             snapshot_date = parse_date_from_filename(os.path.basename(f))
@@ -308,28 +269,27 @@ def main():
             else:
                 sub["amt_pack_program"] = sub.get("Program", pd.Series([""] * len(sub)))
 
-            # Drop completely missing key parts
+            # Key parts must exist
             sub = sub.dropna(subset=["Legal Instrument Drug", "Item Code", "SnapshotDate"])
 
-            # Identity base used for grouping (does NOT include price metrics or date)
-            base_cols = CHEMO_IDENTITY_COLS
-
-            # Variant signature BASE = ALL non-price, non-date, non-source
-            exclude = set([m for m in PRICE_METRICS] + [m + "_num" for m in PRICE_METRICS] + ["SnapshotDate", "SourceFile"])
+            # Variant signature (one string per row)
+            exclude = set([m for m in PRICE_METRICS] +
+                          [m + "_num" for m in PRICE_METRICS] +
+                          ["SnapshotDate", "SourceFile"])
             sig_cols = [c for c in sub.columns if c not in exclude]
-            sig_df = sub[sig_cols].fillna("").astype(str)
-            sub["variant_signature_base"] = sig_df.apply(lambda r: " | ".join(r.values.tolist()), axis=1)
+            sig_cols = list(dict.fromkeys(sig_cols))  # de-dup just in case
+            sig_view = sub.loc[:, sig_cols].fillna("").astype(str)
+            sub["variant_signature_base"] = sig_view.agg(" | ".join, axis=1)
 
-            # Keep distinct rows (allow missing AEMP; keep any metric present)
+            # Minimal distinct rows carried forward
+            base_cols = CHEMO_IDENTITY_COLS
             cols_to_keep = base_cols + ["SourceFile","SnapshotDate","amt_pack_program","variant_signature_base"]
             for m in PRICE_METRICS:
-                if m + "_num" in sub.columns:
-                    cols_to_keep.append(m + "_num")
-
+                cols_to_keep.append(m + "_num")
             existing_cols = [c for c in cols_to_keep if c in sub.columns]
             sub_distinct = sub[existing_cols].drop_duplicates()
 
-            # Collisions (distinct AEMP values within same base+date) – optional
+            # Collisions (AEMP)
             if "AEMP_num" in sub_distinct.columns:
                 collisions = (
                     sub_distinct.groupby(base_cols + ["variant_signature_base","SnapshotDate","SourceFile"])["AEMP_num"]
@@ -356,9 +316,8 @@ def main():
 
             # Register for SQL inserts
             con.register("tmp_sub", sub_distinct)
-            tmp_registered = True
 
-            # Insert NEW variants into dim_product_line
+            # Insert NEW variants
             con.execute("""
             INSERT INTO dim_product_line (
                 product_line_id, item_code_b, name_a, attr_c, attr_f, attr_g, attr_j,
@@ -417,7 +376,7 @@ def main():
             WHERE d.product_line_id IS NULL;
             """)
 
-            # Insert monthly facts with all metrics (NO blacklist filter; blanks remain as NULLs)
+            # Insert monthly facts (all *_num columns exist, even if NULL)
             con.execute("""
             INSERT INTO fact_monthly (
                 product_line_id, snapshot_date,
@@ -465,17 +424,12 @@ def main():
             """)
 
             total_rows += len(sub)
+            con.unregister("tmp_sub")
             print("    inserted (this file): OK")
 
         except Exception as e:
             problems.append(f"{os.path.basename(f)} error: {e}")
             print("    ERROR:", e)
-        finally:
-            if tmp_registered:
-                try:
-                    con.unregister("tmp_sub")
-                except Exception:
-                    pass
 
     # Summary
     total_lines = con.execute("SELECT COUNT(*) FROM dim_product_line").fetchone()[0]
@@ -490,10 +444,10 @@ def main():
         for p in problems:
             print(" -", p)
 
-    con.close()
-
 if __name__ == "__main__":
     main()
+
+
 
 
 
