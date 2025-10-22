@@ -523,7 +523,7 @@ except Exception as e:
     
 # ---- Load a wide table for BOTH datasets (PBS uses stored wide; Chemo builds on the fly) ----
 @st.cache_data(show_spinner=False)
-def load_wide_from_db(db_path: str, dataset: str):
+def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     import os
     mtime = os.path.getmtime(db_path)
     con2 = duckdb.connect(str(db_path), read_only=True)
@@ -613,7 +613,7 @@ def load_wide_from_db(db_path: str, dataset: str):
     return wide, None, mtime
 
 # Use the unified loader
-df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH), dataset)
+df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH), dataset, DATA_VERSION)
 if wide_built_at:
     st.caption(f"Wide table built at: {wide_built_at}")
 
@@ -654,9 +654,10 @@ fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
 fm_amt_expr    = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
 fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
 
-# --- Always-on, database-wide month-to-month increases (shown near top) ---
-show_month_to_month_increases(con)
-show_month_to_month_decreases(con)
+# --- Month-to-month sections (Chemo only) ---
+if dataset == "Chemo EFC":
+    show_month_to_month_increases(con)
+    show_month_to_month_decreases(con)
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 meta_sql = f"""
