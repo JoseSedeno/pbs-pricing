@@ -2,7 +2,7 @@
 """
 Chemo EFC -> DuckDB (variant-aware, multi-metric prices)
 
-Reads files named ex-manufacturer-prices-efc-YYYY-MM-DD.xlsx (any case).
+Reads files named ex-manufacturer-prices-efc-YYYY-MM-D.xlsx or YYYY-MM-DD.xlsx (any case).
 Creates or updates:
   - dim_product_line
   - fact_monthly (AEMP, PEMP, Ex-man Price per Vial, DPMA, Claimed Price for Pack, Claimed Price for vial, Claimed DPMA, Premium)
@@ -40,10 +40,12 @@ def safe_concat(x, y, sep="_"):
     return x or y
 
 def parse_date_from_filename(fname: str):
-    m = re.search(r"ex-manufacturer-prices-efc-(\d{4}-\d{2}-\d{2})\.xlsx$", fname, flags=re.IGNORECASE)
-    if m:
-        return pd.to_datetime(m.group(1), errors="coerce").date()
-    return None
+    # Accept 1 or 2 digit day, any case .xlsx
+    m = re.search(r"ex-manufacturer-prices-efc-(\d{4})-(\d{2})-(\d{1,2})\.[xX][lL][sS][xX]$", fname)
+    if not m:
+        return None
+    y, mo, d = map(int, m.groups())
+    return pd.Timestamp(year=y, month=mo, day=d).date()
 
 def find_col(cols, aliases):
     """Find a column by exact lower-cased name, else substring match."""
@@ -252,7 +254,7 @@ def main():
                 if c in sub.columns:
                     sub[c] = sub[c].map(normalize_punct)
 
-            # Guarantee *_num columns EXIST for every metric (even if the metric column is missing)
+            # Guarantee *_num columns for every metric
             for price_col in PRICE_METRICS:
                 if price_col in sub.columns:
                     clean = (
@@ -282,18 +284,11 @@ def main():
             # Key parts must exist
             sub = sub.dropna(subset=["Legal Instrument Drug", "Item Code", "SnapshotDate"])
 
-            # -------- Variant signature (one string per row) --------
-            exclude = set(
-                [m for m in PRICE_METRICS] +
-                [m + "_num" for m in PRICE_METRICS] +
-                ["SnapshotDate", "SourceFile"]
-            )
-
-            # keep only non-excluded columns, de-dup order, stringify, and join per row
-            sig_cols = [c for c in sub.columns if c not in exclude]
-            sig_cols = list(dict.fromkeys(sig_cols))  # preserve order, remove dups
-            sig_view = sub.loc[:, sig_cols].fillna("").astype(str)
-            sub["variant_signature_base"] = sig_view.agg(" | ".join, axis=1)
+            # -------- Variant signature (robust) --------
+            exclude = set(PRICE_METRICS + [m + "_num" for m in PRICE_METRICS] + ["SnapshotDate", "SourceFile"])
+            sig_cols = list(dict.fromkeys([c for c in sub.columns if c not in exclude]))
+            sig_view = sub.loc[:, sig_cols].astype(str).fillna("")
+            sub["variant_signature_base"] = sig_view.apply(lambda r: " | ".join(list(r.values)), axis=1)
 
             # -------- Minimal distinct rows carried forward --------
             base_cols = CHEMO_IDENTITY_COLS
@@ -305,7 +300,7 @@ def main():
             existing_cols = [c for c in cols_to_keep if c in sub.columns]
             sub_distinct = sub[existing_cols].drop_duplicates()
 
-            # Ensure all *_num metric columns exist so downstream SQL can reference them
+            # Ensure all *_num metric columns exist
             for m in PRICE_METRICS:
                 col = m + "_num"
                 if col not in sub_distinct.columns:
@@ -398,7 +393,7 @@ def main():
             WHERE d.product_line_id IS NULL;
             """)
 
-            # Insert monthly facts (all *_num columns exist, even if NULL)
+            # Insert monthly facts
             con.execute("""
             INSERT INTO fact_monthly (
                 product_line_id, snapshot_date,
@@ -468,8 +463,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
