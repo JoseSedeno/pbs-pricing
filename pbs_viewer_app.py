@@ -708,10 +708,10 @@ WHERE lower(d.name_a) = lower(?)
 ORDER BY 1;
 """
 
-@st.cache_data
-def get_drugs():
+@st.cache_data(show_spinner=False)
+def get_drugs(active_dataset: str):
     # Populate from the active dataset only
-    if dataset == "PBS AEMP":
+    if active_dataset == "PBS AEMP":
         return con.execute(
             'SELECT DISTINCT "Legal Instrument Drug" AS drug FROM wide_fixed ORDER BY 1'
         ).df()["drug"].tolist()
@@ -843,7 +843,7 @@ def build_chart_df(drug: str) -> pd.DataFrame:
 # ---- Sidebar ----
 with st.sidebar:
     st.subheader("Filters")
-    all_drugs = get_drugs()
+    all_drugs = get_drugs(dataset)
     if not all_drugs:
         st.error("No drugs found in dim_product_line."); st.stop()
 
