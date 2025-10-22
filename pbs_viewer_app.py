@@ -512,6 +512,7 @@ def ensure_db(dataset: str) -> Path:
     return db_path
 
 DB_PATH = ensure_db(dataset)
+DATA_VERSION = (dataset, os.path.getmtime(DB_PATH))
 
 # ---- Open DuckDB ----
 try:
@@ -608,24 +609,6 @@ def load_wide_from_db(db_path: str, dataset: str):
         [c for c in wide.columns if c.startswith("AEMP ")],
         key=lambda c: pd.to_datetime(c.replace("AEMP ",""), format="%b %y", errors="coerce")
     )
-    wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
-    return wide, None, mtime
-
-    long_df["Formulary"] = long_df["_formulary_src"].map(_norm_formulary)
-    long_df.drop(columns=["_formulary_src"], inplace=True)
-    long_df["month_label"] = pd.to_datetime(long_df["month"]).dt.strftime("AEMP %b %y")
-
-    id_cols = [
-        "Item Code","Legal Instrument Drug","Legal Instrument Form",
-        "Brand Name","Formulary","Responsible Person","AMT Trade Product Pack",
-    ]
-    wide = (
-        long_df
-        .pivot_table(index=id_cols, columns="month_label", values="aemp", aggfunc="mean")
-        .reset_index()
-    )
-    mcols = sorted([c for c in wide.columns if c.startswith("AEMP ")],
-                   key=lambda c: pd.to_datetime(c.replace("AEMP ",""), format="%b %y", errors="coerce"))
     wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
     return wide, None, mtime
 
@@ -726,8 +709,15 @@ ORDER BY 1;
 
 @st.cache_data
 def get_drugs():
-    sql = 'SELECT DISTINCT "name_a" AS drug FROM "dim_product_line" ORDER BY 1'
-    return con.execute(sql).df()["drug"].tolist()
+    # Populate from the active dataset only
+    if dataset == "PBS AEMP":
+        return con.execute(
+            'SELECT DISTINCT "Legal Instrument Drug" AS drug FROM wide_fixed ORDER BY 1'
+        ).df()["drug"].tolist()
+    else:  # Chemo EFC
+        return con.execute(
+            'SELECT DISTINCT name_a AS drug FROM dim_product_line ORDER BY 1'
+        ).df()["drug"].tolist()
 
 @st.cache_data
 def get_series(drug: str, merge_codes: bool):
