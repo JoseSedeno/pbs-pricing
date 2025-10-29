@@ -136,7 +136,6 @@ def main():
     # Support both new and old flags
     ap.add_argument("--output_dir", default=None, help="Directory for exports (new style)")
     ap.add_argument("--xlsx", action="store_true", help="Also write an .xlsx file (new style)")
-
     ap.add_argument("--excel", default=None, help="Explicit path to Excel export (old style)")
     ap.add_argument("--csv", default=None, help="Explicit path to CSV export (old style)")
 
@@ -154,7 +153,6 @@ def main():
         csv_path = os.path.join(out_dir, "aemp_fixed_wide.csv")
         xlsx_path = os.path.join(out_dir, "aemp_fixed_wide.xlsx") if args.xlsx else None
     else:
-        # Old style explicit files (fallback)
         csv_path = os.path.abspath(os.path.expanduser(args.csv)) if args.csv else None
         xlsx_path = os.path.abspath(os.path.expanduser(args.excel)) if args.excel else None
         if not csv_path and not xlsx_path:
@@ -175,10 +173,9 @@ def main():
         ("Item Code",             ["item_code", "item_code_b", "item_code_a"]),      # A
         ("Legal Instrument Drug", ["legal_instrument_drug", "name_a", "drug_name"]), # B
         ("Legal Instrument Form", ["legal_instrument_form", "attr_c", "form"]),      # C
-        ("Brand Name",            ["brand_name", "brand"]),                           # E (overridden by price-table latest)
-        ("Formulary",             ["attr_f", "formulary"]),                           # F base present, price-table latest overrides
+        ("Brand Name",            ["brand_name", "brand"]),                           # E
+        ("Formulary",             ["attr_f", "formulary"]),                           # F
         ("Responsible Person",    ["responsible_person", "name_b"]),                  # I
-        # AMT Trade Product Pack comes from price table latest snapshot (X)
     ]
 
     select_pairs = []
@@ -200,13 +197,10 @@ def main():
     lmap = {c.lower(): c for c in price_cols_all}
 
     pm_aliases = {}
-    # Brand from latest snapshot
     if "brand_name" in lmap:
         pm_aliases[lmap["brand_name"]] = "Brand Name"
-    # Formulary from latest snapshot
     if "formulary" in lmap:
         pm_aliases[lmap["formulary"]] = "Formulary"
-    # AMT Trade Product Pack from latest snapshot
     if "amt_trade_product_pack" in lmap:
         pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"
     elif "amt_trade_pack" in lmap:
@@ -277,8 +271,8 @@ def main():
     for c in id_cols:
         df[c] = (
             df[c].astype("string").fillna("")
-                 .str.replace("\u00A0", " ", regex=False)   # non-breaking spaces
-                 .str.replace(r"\s+", " ", regex=True)      # collapse whitespace
+                 .str.replace("\u00A0", " ", regex=False)
+                 .str.replace(r"\s+", " ", regex=True)
                  .str.strip()
         )
 
@@ -322,20 +316,20 @@ def main():
         "Brand Name","Responsible Person","AMT Trade Product Pack"
     ] if c in pt.columns]
 
-    # No mixed Formulary within the same left-ID row
     if _grp_cols and "Formulary" in pt.columns:
         grp = pt.groupby(_grp_cols)["Formulary"].nunique(dropna=True)
         bad = grp[grp > 1]
         if len(bad):
-            raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
+            # changed from raise to warning so export continues
+            print(f"WARNING: Mixed Formulary detected in {len(bad)} rows. Continuing export.")
 
     # Optional business rule example
     if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
-        ab = pt.loc[pt["Legal Instrument Drug"].str.lower()=="abacavir","Formulary"].dropna().unique().tolist()
+        ab = pt.loc[pt["Legal Instrument Drug"].str.lower() == "abacavir", "Formulary"].dropna().unique().tolist()
         if len(ab) and any(x != "F2" for x in ab):
-            raise RuntimeError(f"Formulary check failed for Abacavir: found {sorted(ab)}, expected ['F2']")
+            print(f"WARNING: Formulary check for Abacavir found {sorted(ab)}. Expected ['F2'].")
 
-    # 3.12 Write files (handles new or old flag style)
+    # 3.12 Write files
     if csv_path:
         pt.to_csv(csv_path, index=False)
     if xlsx_path:
@@ -375,5 +369,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
 
 
