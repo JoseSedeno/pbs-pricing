@@ -17,10 +17,10 @@ Prevents double ups by:
 2) normalizing identifier strings
 3) dropping duplicates per month before pivot
 
-Outputs:
-- out/aemp_fixed_wide.csv
-- out/aemp_fixed_wide.xlsx (if --xlsx)
-- DuckDB tables: wide_fixed, wide_fixed_meta
+Outputs (choose flags):
+- New style:  --db ... --output_dir out [--xlsx]
+- Old style:  --db ... [--excel out/aemp_fixed_wide.xlsx] [--csv out/aemp_fixed_wide.csv]
+Also writes DuckDB tables: wide_fixed, wide_fixed_meta
 """
 
 # ==============================
@@ -132,16 +132,34 @@ def main():
     # 3.1 Args and IO
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", required=True, help="Path to pbs_prices.duckdb")
-    ap.add_argument("--output_dir", default="out", help="Where to write the export")
-    ap.add_argument("--xlsx", action="store_true", help="Also write an .xlsx file")
+
+    # Support both new and old flags
+    ap.add_argument("--output_dir", default=None, help="Directory for exports (new style)")
+    ap.add_argument("--xlsx", action="store_true", help="Also write an .xlsx file (new style)")
+
+    ap.add_argument("--excel", default=None, help="Explicit path to Excel export (old style)")
+    ap.add_argument("--csv", default=None, help="Explicit path to CSV export (old style)")
+
     args = ap.parse_args()
 
     db = os.path.abspath(os.path.expanduser(args.db))
-    out_dir = os.path.abspath(os.path.expanduser(args.output_dir))
-    os.makedirs(out_dir, exist_ok=True)
     if not os.path.exists(db):
         print(f"ERROR: DB not found: {db}", file=sys.stderr)
         sys.exit(2)
+
+    # Resolve outputs
+    if args.output_dir:
+        out_dir = os.path.abspath(os.path.expanduser(args.output_dir))
+        os.makedirs(out_dir, exist_ok=True)
+        csv_path = os.path.join(out_dir, "aemp_fixed_wide.csv")
+        xlsx_path = os.path.join(out_dir, "aemp_fixed_wide.xlsx") if args.xlsx else None
+    else:
+        # Old style explicit files (fallback)
+        csv_path = os.path.abspath(os.path.expanduser(args.csv)) if args.csv else None
+        xlsx_path = os.path.abspath(os.path.expanduser(args.excel)) if args.excel else None
+        if not csv_path and not xlsx_path:
+            print("ERROR: Provide --output_dir (new style) or at least one of --csv/--excel (old style).", file=sys.stderr)
+            sys.exit(2)
 
     # 3.2 Connect and detect schema
     con = duckdb.connect(db)
@@ -298,31 +316,29 @@ def main():
     month_cols_sorted = sorted(month_cols, key=_mkey)
     pt = pt[left_export_headers + month_cols_sorted]
 
-   # 3.11 Validation to catch drifts (safe on missing columns)
+    # 3.11 Validation to catch drifts (safe on missing columns)
+    _grp_cols = [c for c in [
+        "Item Code","Legal Instrument Drug","Legal Instrument Form",
+        "Brand Name","Responsible Person","AMT Trade Product Pack"
+    ] if c in pt.columns]
 
-_grp_cols = [c for c in [
-    "Item Code","Legal Instrument Drug","Legal Instrument Form",
-    "Brand Name","Responsible Person","AMT Trade Product Pack"
-] if c in pt.columns]
+    # No mixed Formulary within the same left-ID row
+    if _grp_cols and "Formulary" in pt.columns:
+        grp = pt.groupby(_grp_cols)["Formulary"].nunique(dropna=True)
+        bad = grp[grp > 1]
+        if len(bad):
+            raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
 
-# No mixed Formulary within the same left-ID row
-if _grp_cols and "Formulary" in pt.columns:
-    grp = pt.groupby(_grp_cols)["Formulary"].nunique(dropna=True)
-    bad = grp[grp > 1]
-    if len(bad):
-        raise RuntimeError(f"Mixed Formulary detected in {len(bad)} rows. Export aborted.")
+    # Optional business rule example
+    if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
+        ab = pt.loc[pt["Legal Instrument Drug"].str.lower()=="abacavir","Formulary"].dropna().unique().tolist()
+        if len(ab) and any(x != "F2" for x in ab):
+            raise RuntimeError(f"Formulary check failed for Abacavir: found {sorted(ab)}, expected ['F2']")
 
-# Optional business rule
-if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
-    ab = pt.loc[pt["Legal Instrument Drug"].str.lower()=="abacavir","Formulary"].dropna().unique().tolist()
-    if len(ab) and any(x != "F2" for x in ab):
-        raise RuntimeError(f"Formulary check failed for Abacavir: found {sorted(ab)}, expected ['F2']")
-
-    # 3.12 Write files
-    csv_path  = os.path.join(out_dir, "aemp_fixed_wide.csv")
-    xlsx_path = os.path.join(out_dir, "aemp_fixed_wide.xlsx")
-    pt.to_csv(csv_path, index=False)
-    if args.xlsx:
+    # 3.12 Write files (handles new or old flag style)
+    if csv_path:
+        pt.to_csv(csv_path, index=False)
+    if xlsx_path:
         try:
             pt.to_excel(xlsx_path, index=False, engine="openpyxl")
         except Exception as e:
@@ -335,7 +351,7 @@ if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
         CREATE OR REPLACE TABLE wide_fixed_meta AS
         SELECT CURRENT_TIMESTAMP AS built_at
     """)
-    # optional: con.unregister("df_wide")
+    con.unregister("df_wide")
 
     # 3.14 Console summary
     print("OK.")
@@ -346,8 +362,9 @@ if ("Legal Instrument Drug" in pt.columns) and ("Formulary" in pt.columns):
     print(f"  date_col  : {date_col}")
     print(f"  price_col : {price_col}")
     print(f"Rows: {len(pt):,}   Month columns: {len(month_cols_sorted)}")
-    print(f"CSV : {csv_path}")
-    if args.xlsx:
+    if csv_path:
+        print(f"CSV : {csv_path}")
+    if xlsx_path:
         print(f"XLSX: {xlsx_path}")
     print("DuckDB: wrote tables wide_fixed, wide_fixed_meta")
 
