@@ -887,7 +887,14 @@ if chart_df.empty:
     st.warning("No data for the selected drug(s)."); st.stop()
 
 # Time-range slider (uses chart_df to set bounds)
-min_m, max_m = chart_df["month"].min(), chart_df["month"].max()
+min_m, max_m = con.execute("""
+    SELECT
+      min(date_trunc('month', snapshot_date))::DATE,
+      max(date_trunc('month', snapshot_date))::DATE
+    FROM fact_monthly
+    WHERE aemp IS NOT NULL
+""").fetchone()
+min_m, max_m = pd.to_datetime(min_m), pd.to_datetime(max_m)
 with st.sidebar:
     st.subheader("Time range")
     start_m, end_m = st.slider(
