@@ -925,11 +925,14 @@ if filtered_df.empty:
 else:
     chart = (
         alt.Chart(filtered_df.sort_values("month"))
-        .mark_line(point=True)
+        .transform_filter(alt.datum.aemp != None)
+        .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
         .encode(
-            x=alt.X("month:T", axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
+            x=alt.X("month:T", sort=None, axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
             color=alt.Color("display_name:N", title="Identifier"),
+            detail="display_name:N",
+            order="month:T",
             tooltip=[
                 alt.Tooltip("month:T", title="Month", format="%Y-%m"),
                 alt.Tooltip("display_name:N", title="Identifier"),
