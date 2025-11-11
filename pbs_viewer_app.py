@@ -930,6 +930,25 @@ subset = (
 st.write("Apr–Jun rows for:", id_one)
 st.dataframe(subset, use_container_width=True)
 
+# --- Debug: is May under a different identifier? ---
+import re
+id_pick = id_one  # reuse the dropdown choice
+m = re.search(r"\b(\d{5}[A-Z]?)\b", id_pick)  # try to grab the item code from the name (e.g., 10757E)
+item_code_guess = m.group(1) if m else None
+
+cand = filtered_df.assign(month=pd.to_datetime(filtered_df["month"], errors="coerce"))
+if item_code_guess:
+    cand = cand[cand["display_name"].str.contains(item_code_guess, na=False)]
+else:
+    cand = cand[cand["display_name"] == id_pick]
+
+window = cand.query("month >= '2025-04-01' and month <= '2025-07-31'")[
+    ["display_name","month","aemp"]
+].sort_values(["display_name","month"])
+
+st.caption("Debug: all identifiers with the same item code (Apr–Jul)")
+st.dataframe(window, use_container_width=True)
+
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
