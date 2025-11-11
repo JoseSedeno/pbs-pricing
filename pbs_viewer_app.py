@@ -919,6 +919,17 @@ with st.sidebar:
 # If 'Select all' is on (or nothing picked), show everything
 filtered_df = chart_df if (select_all or not picked) else chart_df[chart_df["display_name"].isin(picked)]
 
+# --- Debug: show Apr–Jun rows the chart is using for one identifier ---
+id_one = st.selectbox("Debug: pick one identifier", sorted(filtered_df["display_name"].unique()))
+subset = (
+    filtered_df.assign(month=pd.to_datetime(filtered_df["month"], errors="coerce"))
+    .query("display_name == @id_one and month >= '2025-04-01' and month <= '2025-06-30'")
+    [["display_name", "month", "aemp"]]
+    .sort_values(["month"])
+)
+st.write("Apr–Jun rows for:", id_one)
+st.dataframe(subset, use_container_width=True)
+
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
