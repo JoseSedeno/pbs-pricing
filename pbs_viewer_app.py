@@ -925,6 +925,30 @@ with st.sidebar:
 mask = (chart_df["month"] >= pd.to_datetime(start_m)) & (chart_df["month"] <= pd.to_datetime(end_m))
 chart_df = chart_df.loc[mask].copy()
 
+# ---- Diagnostic: blanks in series key fields ----
+key3 = ["Item Code", "Responsible Person", "AMT Trade Product Pack"]
+for c in key3:
+    if c not in chart_df.columns:
+        chart_df[c] = pd.NA  # ensure columns exist for visibility
+
+def _is_blank(s: pd.Series) -> pd.Series:
+    return s.isna() | (s.astype(str).str.strip().isin(["", "None", "nan"]))
+
+blank_counts = {c: int(_is_blank(chart_df[c]).sum()) for c in key3}
+st.write("Blank counts in key fields:", blank_counts)
+
+rows_with_blanks = _is_blank(chart_df["Item Code"]) | _is_blank(chart_df["Responsible Person"]) | _is_blank(chart_df["AMT Trade Product Pack"])
+if rows_with_blanks.any():
+    st.caption("Rows with blanks in any key field (first 30):")
+    st.dataframe(
+        chart_df.loc[rows_with_blanks, ["display_name","month","aemp"] + key3]
+                .sort_values(["display_name","month"])
+                .head(30),
+        use_container_width=True
+    )
+else:
+    st.success("No blanks found in Item Code, Responsible Person, or AMT Trade Product Pack.")
+
 # ---- Identifier picker (no hard cap) ----
 all_ids = sorted(chart_df["display_name"].unique().tolist())
 with st.sidebar:
