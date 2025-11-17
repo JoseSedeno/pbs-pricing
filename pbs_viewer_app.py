@@ -787,58 +787,70 @@ def build_export_table(drug: str) -> pd.DataFrame:
 def build_chart_df(drug: str) -> pd.DataFrame:
     """
     Build a long dataframe for the chart with columns:
-    month (datetime), display_name (identifier), aemp (float).
-    Reads from the same wide table used for the export and
-    gracefully handles missing identifier columns.
+      month, display_name, aemp, Item Code, Responsible Person,
+      AMT Trade Product Pack, series_id
+    The three raw columns are passed through from the wide table so we can
+    colour/track a stable series across months.
     """
     base = build_export_table(drug).copy()
     if base.empty:
-        return base.assign(month=pd.NaT, display_name="", aemp=pd.NA).head(0)
+        cols = ["month","display_name","aemp",
+                "Item Code","Responsible Person","AMT Trade Product Pack","series_id"]
+        return pd.DataFrame(columns=cols).head(0)
 
-    # Choose identifier columns that exist in wide_fixed
+    # Candidate pieces for the human-readable label (use what exists)
     id_candidates = [
         "Item Code",
         "Formulary",
         "Brand Name",
         "Legal Instrument Form",
         "AMT Trade Product Pack",
-        "Responsible Person",  # ignored if missing
+        "Responsible Person",
     ]
     id_cols = [c for c in id_candidates if c in base.columns]
-
-    # Fallback guard
-    if not id_cols:
-        id_cols = [c for c in ["Item Code", "Brand Name"] if c in base.columns]
-
-    # Build a single display label by joining the available columns
     base[id_cols] = base[id_cols].astype(str).replace({"None": "", "nan": ""})
     base["display_name"] = (
-        base[id_cols]
-        .agg(" · ".join, axis=1)
-        .str.replace(r"( · )+$", "", regex=True)
+        base[id_cols].agg(" · ".join, axis=1).str.replace(r"( · )+$", "", regex=True)
+    )
+
+    # Keep the raw key parts if present
+    raw_keep = [c for c in ["Item Code","Responsible Person","AMT Trade Product Pack"] if c in base.columns]
+    for c in ["Item Code","Responsible Person","AMT Trade Product Pack"]:
+        if c not in base.columns:
+            base[c] = pd.NA  # ensure columns exist for a stable schema
+
+    # Compute a stable series key (may be NA if sources are missing)
+    base["series_id"] = (
+        base["Item Code"].astype("string") + " · " +
+        base["Responsible Person"].astype("string") + " · " +
+        base["AMT Trade Product Pack"].astype("string")
     )
 
     # Unpivot month columns
     month_cols = [c for c in base.columns if c.startswith("AEMP ")]
     long_df = base.melt(
-        id_vars=["display_name"],
+        id_vars=["display_name","Item Code","Responsible Person","AMT Trade Product Pack","series_id"],
         value_vars=month_cols,
         var_name="month_label",
         value_name="aemp",
     )
 
-    # Parse "AEMP Aug 13" → datetime
+    # Parse month and clean
     long_df["month"] = pd.to_datetime(
         long_df["month_label"].str.replace("AEMP ", "", regex=False),
         format="%b %y",
         errors="coerce",
     )
-
-    # Clean and order
-    long_df = long_df.dropna(subset=["month"]).drop(columns=["month_label"])
     long_df["aemp"] = pd.to_numeric(long_df["aemp"], errors="coerce")
 
-    return long_df.sort_values(["display_name", "month"])[["month", "display_name", "aemp"]]
+    long_df = (
+        long_df.dropna(subset=["month","aemp"])
+               .drop(columns=["month_label"])
+               .sort_values(["series_id","display_name","month"])
+               [["month","display_name","aemp","Item Code","Responsible Person","AMT Trade Product Pack","series_id"]]
+               .reset_index(drop=True)
+    )
+    return long_df
 
 # ---- Sidebar ----
 with st.sidebar:
@@ -872,7 +884,11 @@ for d in (selected_drugs or []):
 if frames:
     chart_df = pd.concat(frames, ignore_index=True)
 else:
-    chart_df = pd.DataFrame(columns=["month", "display_name", "aemp", "__drug__"])
+    chart_df = pd.DataFrame(columns=[
+    "month", "display_name", "aemp",
+    "Item Code", "Responsible Person", "AMT Trade Product Pack",
+    "series_id", "__drug__"
+])
     
 # Ensure clean data for chart
 chart_df["month"] = pd.to_datetime(chart_df["month"], errors="coerce")
@@ -918,17 +934,6 @@ with st.sidebar:
 
 # If 'Select all' is on (or nothing picked), show everything
 filtered_df = chart_df if (select_all or not picked) else chart_df[chart_df["display_name"].isin(picked)]
-# Stable series key: Item Code + Responsible Person + AMT Trade Product Pack
-need = {"Item Code", "Responsible Person", "AMT Trade Product Pack"}
-missing = [c for c in need if c not in filtered_df.columns]
-if missing:
-    st.warning(f"Missing columns for series key: {missing}")
-else:
-    filtered_df["series_id"] = (
-        filtered_df["Item Code"].astype(str) + " · " +
-        filtered_df["Responsible Person"].astype(str) + " · " +
-        filtered_df["AMT Trade Product Pack"].astype(str)
-    )
 
 # --- Debug: show Apr–Jun rows the chart is using for one identifier ---
 id_one = st.selectbox("Debug: pick one identifier", sorted(filtered_df["display_name"].unique()))
@@ -983,10 +988,13 @@ else:
             detail="series_id:N",
             order="month:T",
             tooltip=[
-                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                alt.Tooltip("display_name:N", title="Identifier"),
-                alt.Tooltip("aemp:Q", title="AEMP"),
-            ],
+    alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+    alt.Tooltip("display_name:N", title="Identifier (label)"),
+    alt.Tooltip("Item Code:N", title="Item Code"),
+    alt.Tooltip("Responsible Person:N", title="Responsible Person"),
+    alt.Tooltip("AMT Trade Product Pack:N", title="AMT Trade Product Pack"),
+    alt.Tooltip("aemp:Q", title="AEMP"),
+],
         )
         .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
         .interactive(bind_x=True)
