@@ -960,6 +960,14 @@ window = cand.query("month >= '2025-04-01' and month <= '2025-07-31'")[
 st.caption("Debug: all identifiers with the same item code (Apr–Jul)")
 st.dataframe(window, use_container_width=True)
 
+# Quick check: does series_id exist and have values?
+st.write("series_id present:", "series_id" in filtered_df.columns)
+if "series_id" in filtered_df.columns:
+    st.write("series_id nulls:", int(filtered_df["series_id"].isna().sum()))
+    st.dataframe(filtered_df[["display_name","series_id","month","aemp"]]
+                 .sort_values(["series_id","month"]).head(20),
+                 use_container_width=True)
+
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
