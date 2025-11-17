@@ -918,6 +918,17 @@ with st.sidebar:
 
 # If 'Select all' is on (or nothing picked), show everything
 filtered_df = chart_df if (select_all or not picked) else chart_df[chart_df["display_name"].isin(picked)]
+# Stable series key: Item Code + Responsible Person + AMT Trade Product Pack
+need = {"Item Code", "Responsible Person", "AMT Trade Product Pack"}
+missing = [c for c in need if c not in filtered_df.columns]
+if missing:
+    st.warning(f"Missing columns for series key: {missing}")
+else:
+    filtered_df["series_id"] = (
+        filtered_df["Item Code"].astype(str) + " · " +
+        filtered_df["Responsible Person"].astype(str) + " · " +
+        filtered_df["AMT Trade Product Pack"].astype(str)
+    )
 
 # --- Debug: show Apr–Jun rows the chart is using for one identifier ---
 id_one = st.selectbox("Debug: pick one identifier", sorted(filtered_df["display_name"].unique()))
@@ -960,8 +971,8 @@ else:
         .encode(
             x=alt.X("month:T", sort=None, axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
-            color=alt.Color("display_name:N", title="Identifier"),
-            detail="display_name:N",
+            color=alt.Color("series_id:N", title="Identifier"),
+            detail="series_id:N",
             order="month:T",
             tooltip=[
                 alt.Tooltip("month:T", title="Month", format="%Y-%m"),
