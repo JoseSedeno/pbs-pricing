@@ -529,13 +529,64 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     con2 = duckdb.connect(str(db_path), read_only=True)
 
     if dataset == "PBS AEMP":
-        wide = con2.execute('SELECT * FROM wide_fixed').df()
         try:
-            built_at = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()[0]
-        except Exception:
-            built_at = None
-        con2.close()
-        return wide, built_at, mtime
+            wide = con2.execute('SELECT * FROM wide_fixed').df()
+            row = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()
+            built_at = row[0] if row else None
+
+            # Normalize PBS wide column names so the viewer can find them
+            def _pick(colnames, *opts):
+                low = {c.strip().lower(): c for c in colnames}
+                for o in opts:
+                    k = o.strip().lower()
+                    if k in low:
+                        return low[k]
+                return None
+
+            # Responsible Person
+            rp = _pick(
+                wide.columns,
+                "Responsible Person", "Responsible Person Name",
+                "Sponsor", "Sponsor Name", "responsible_person"
+            )
+            if rp and rp != "Responsible Person":
+                wide = wide.rename(columns={rp: "Responsible Person"})
+
+            # AMT Trade Product Pack
+            amt = _pick(
+                wide.columns,
+                "AMT Trade Product Pack", "AMT Trade Pack", "amt_trade_product_pack"
+            )
+            if amt and amt != "AMT Trade Product Pack":
+                wide = wide.rename(columns={amt: "AMT Trade Product Pack"})
+
+            # Item Code
+            ic = _pick(wide.columns, "Item Code", "Item Code B", "item_code_b", "item_code")
+            if ic and ic != "Item Code":
+                wide = wide.rename(columns={ic: "Item Code"})
+
+            # Legal Instrument Form
+            lif = _pick(
+                wide.columns,
+                "Legal Instrument Form", "legal_instrument_form", "variant_signature_base"
+            )
+            if lif and lif != "Legal Instrument Form":
+                wide = wide.rename(columns={lif: "Legal Instrument Form"})
+
+            # Ensure presence and string dtype (preserves <NA>)
+            must_have = ["Responsible Person", "AMT Trade Product Pack", "Item Code", "Legal Instrument Form"]
+            for c in must_have:
+                if c not in wide.columns:
+                    wide[c] = pd.NA
+                wide[c] = wide[c].astype("string")
+
+            return wide, built_at, mtime
+
+        finally:
+            try:
+                con2.close()
+            except Exception:
+                pass
 
     # ---- Chemo EFC: build a PBS-compatible wide (AEMP by month) ----
     # Column maps (pick only if present)
@@ -781,6 +832,31 @@ def build_export_table(drug: str) -> pd.DataFrame:
     ]
     fixed = [c for c in fixed if c in df.columns]
     return df[fixed + month_cols].reset_index(drop=True)
+# Helper to canonicalise key parts for grouping (series_id)
+import re
+
+def _canon_val(x: object) -> str:
+    """
+    Canonical string for grouping:
+    - None/NaN/"None"/"nan" -> ""
+    - trim spaces
+    - collapse internal whitespace
+    - lowercase
+    """
+    if x is None:
+        return ""
+    s = str(x).strip()
+    if s.lower() in {"", "none", "nan", "<na>"}:
+        return ""
+    s = re.sub(r"\s+", " ", s)
+    return s.lower()
+    
+# Canonicalise text for grouping keys
+def _canon_val(x):
+    if pd.isna(x):
+        return ""
+    s = str(x).strip().lower()
+    return " ".join(s.split())  # collapse internal whitespace
 
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
@@ -798,32 +874,41 @@ def build_chart_df(drug: str) -> pd.DataFrame:
                 "Item Code","Responsible Person","AMT Trade Product Pack","series_id"]
         return pd.DataFrame(columns=cols).head(0)
 
-    # Candidate pieces for the human-readable label (use what exists)
-    id_candidates = [
+    # --- Build display label and stable series_id ---
+
+    # Columns to show to the user in the label (use originals, hide empties)
+    _disp_order = [
         "Item Code",
-        "Formulary",
         "Brand Name",
         "Legal Instrument Form",
+        "Formulary",
         "AMT Trade Product Pack",
         "Responsible Person",
     ]
-    id_cols = [c for c in id_candidates if c in base.columns]
-    base[id_cols] = base[id_cols].astype(str).replace({"None": "", "nan": ""})
-    base["display_name"] = (
-        base[id_cols].agg(" · ".join, axis=1).str.replace(r"( · )+$", "", regex=True)
+    _disp_cols = [c for c in _disp_order if c in base.columns]
+
+    # Safe string view with empties cleaned
+    def _clean(s):
+        if pd.isna(s):
+            return ""
+        t = str(s).strip()
+        return "" if t in {"", "None", "nan", "<NA>"} else t
+
+    base["display_name"] = base[_disp_cols].apply(
+        lambda r: " · ".join([_clean(v) for v in r if _clean(v)]),
+        axis=1
     )
 
-    # Keep the raw key parts if present
-    raw_keep = [c for c in ["Item Code","Responsible Person","AMT Trade Product Pack"] if c in base.columns]
-    for c in ["Item Code","Responsible Person","AMT Trade Product Pack"]:
+    # Ensure raw key parts exist so schema is stable
+    for c in ["Item Code", "Responsible Person", "AMT Trade Product Pack"]:
         if c not in base.columns:
-            base[c] = pd.NA  # ensure columns exist for a stable schema
+            base[c] = pd.NA
 
-    # Compute a stable series key (may be NA if sources are missing)
+    # Stable grouping key, canonicalised to avoid spacing or case drift
     base["series_id"] = (
-        base["Item Code"].astype("string") + " · " +
-        base["Responsible Person"].astype("string") + " · " +
-        base["AMT Trade Product Pack"].astype("string")
+        base["Item Code"].map(_canon_val) + "|" +
+        base["Responsible Person"].map(_canon_val) + "|" +
+        base["AMT Trade Product Pack"].map(_canon_val)
     )
 
     # Unpivot month columns
