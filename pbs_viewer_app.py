@@ -955,6 +955,73 @@ with st.sidebar:
 # ---- Series & chart (compare across multiple drugs) ----
 st.write(f"**Database:** `{DB_PATH}`")
 
+# --- Diagnostics: check Responsible Person in PBS wide_fixed for the first selected drug ---
+if dataset == "PBS AEMP":
+    test_drug = (selected_drugs or [""])[0]
+
+    with st.expander("Diagnostics: Responsible Person in wide_fixed (PBS path)", expanded=True):
+        st.caption(f"Drug checked: {test_drug or '(none)'}")
+
+        # Columns present in wide_fixed
+        wf_cols_df = con.execute("PRAGMA table_info('wide_fixed')").df()
+        wf_cols = [str(n) for n in wf_cols_df["name"].tolist()]
+        wf_cols_lower = {c.lower(): c for c in wf_cols}
+
+        # Candidate RP columns that might exist in some exports
+        rp_candidates = [
+            "Responsible Person", "Responsible Person Name",
+            "Sponsor", "Sponsor Name", "responsible_person"
+        ]
+        present_rp_cols = [wf_cols_lower[c.lower()] for c in rp_candidates if c.lower() in wf_cols_lower]
+
+        # Counts for the target drug
+        total_rows = con.execute(
+            'SELECT COUNT(*) FROM wide_fixed WHERE lower("Legal Instrument Drug") = lower(?)',
+            [test_drug]
+        ).fetchone()[0] if test_drug else 0
+
+        # Count NULLs in the canonical target column if it exists
+        nulls_in_rp = None
+        if "Responsible Person".lower() in wf_cols_lower:
+            rp_exact = wf_cols_lower["Responsible Person".lower()]
+            nulls_in_rp = con.execute(
+                f'SELECT COUNT(*) FROM wide_fixed '
+                f'WHERE lower("Legal Instrument Drug") = lower(?) AND "{rp_exact}" IS NULL',
+                [test_drug]
+            ).fetchone()[0]
+
+        # Also show non-null counts for any alternate RP columns if they exist
+        alt_counts = {}
+        for c in present_rp_cols:
+            cnt = con.execute(
+                f'SELECT COUNT(*) FROM wide_fixed '
+                f'WHERE lower("Legal Instrument Drug") = lower(?) AND "{c}" IS NOT NULL',
+                [test_drug]
+            ).fetchone()[0]
+            alt_counts[c] = int(cnt)
+
+        st.write({
+            "total_rows_for_drug": int(total_rows),
+            "responsible_person_column_present": ("Responsible Person".lower() in wf_cols_lower),
+            "nulls_in_responsible_person": (int(nulls_in_rp) if nulls_in_rp is not None else "column_missing"),
+            "alternate_rp_columns_found": present_rp_cols,
+            "non_null_counts_in_alternates": alt_counts,
+        })
+
+        # Show a small sample so you can eyeball what is present in the source
+        sample_cols = [c for c in [
+            "Item Code", "Brand Name", "Legal Instrument Form", "Formulary",
+            "Responsible Person", "Responsible Person Name", "Sponsor", "Sponsor Name",
+            "AMT Trade Product Pack"
+        ] if c in wf_cols]
+        if test_drug and sample_cols:
+            sample = con.execute(
+                f'SELECT {", ".join(f""""{c}"""" for c in sample_cols)} '
+                f'FROM wide_fixed WHERE lower("Legal Instrument Drug") = lower(?) LIMIT 50',
+                [test_drug]
+            ).df()
+            st.dataframe(sample, use_container_width=True)
+
 # Build one long table across the selected drugs
 frames = []
 for d in (selected_drugs or []):
