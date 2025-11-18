@@ -1014,11 +1014,16 @@ if dataset == "PBS AEMP":
             "Responsible Person", "Responsible Person Name", "Sponsor", "Sponsor Name",
             "AMT Trade Product Pack"
         ] if c in wf_cols]
+
         if test_drug and sample_cols:
             cols_sql = ", ".join([f'"{c}"' for c in sample_cols])
-sql = f'SELECT {cols_sql} FROM wide_fixed WHERE lower("Legal Instrument Drug") = lower(?) LIMIT 50'
-sample = con.execute(sql, [test_drug]).df()
-
+            sql = (
+                f'SELECT {cols_sql} '
+                f'FROM wide_fixed '
+                f'WHERE lower("Legal Instrument Drug") = lower(?) '
+                f'LIMIT 50'
+            )
+            sample = con.execute(sql, [test_drug]).df()
             st.dataframe(sample, use_container_width=True)
 
 # Build one long table across the selected drugs
