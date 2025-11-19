@@ -543,6 +543,9 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                         return low[k]
                 return None
 
+            # Canonicalize key columns and ensure presence
+            colmap = {}
+
             # Responsible Person
             rp = _pick(
                 wide.columns,
@@ -550,7 +553,7 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                 "Sponsor", "Sponsor Name", "responsible_person"
             )
             if rp and rp != "Responsible Person":
-                wide = wide.rename(columns={rp: "Responsible Person"})
+                colmap[rp] = "Responsible Person"
 
             # AMT Trade Product Pack
             amt = _pick(
@@ -558,12 +561,12 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                 "AMT Trade Product Pack", "AMT Trade Pack", "amt_trade_product_pack"
             )
             if amt and amt != "AMT Trade Product Pack":
-                wide = wide.rename(columns={amt: "AMT Trade Product Pack"})
+                colmap[amt] = "AMT Trade Product Pack"
 
             # Item Code
             ic = _pick(wide.columns, "Item Code", "Item Code B", "item_code_b", "item_code")
             if ic and ic != "Item Code":
-                wide = wide.rename(columns={ic: "Item Code"})
+                colmap[ic] = "Item Code"
 
             # Legal Instrument Form
             lif = _pick(
@@ -571,11 +574,14 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                 "Legal Instrument Form", "legal_instrument_form", "variant_signature_base"
             )
             if lif and lif != "Legal Instrument Form":
-                wide = wide.rename(columns={lif: "Legal Instrument Form"})
+                colmap[lif] = "Legal Instrument Form"
 
-            # Ensure presence and string dtype (preserves <NA>)
-            must_have = ["Responsible Person", "AMT Trade Product Pack", "Item Code", "Legal Instrument Form"]
-            for c in must_have:
+            # Apply renames in one go
+            if colmap:
+                wide = wide.rename(columns=colmap)
+
+            # Ensure presence and string dtype (keeps <NA>)
+            for c in ["Responsible Person", "AMT Trade Product Pack", "Item Code", "Legal Instrument Form"]:
                 if c not in wide.columns:
                     wide[c] = pd.NA
                 wide[c] = wide[c].astype("string")
