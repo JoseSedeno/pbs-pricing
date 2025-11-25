@@ -6,6 +6,7 @@ import pandas as pd
 import streamlit as st
 import altair as alt
 import gdown
+import re
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
@@ -857,13 +858,6 @@ def _canon_val(x: object) -> str:
     s = re.sub(r"\s+", " ", s)
     return s.lower()
     
-# Canonicalise text for grouping keys
-def _canon_val(x):
-    if pd.isna(x):
-        return ""
-    s = str(x).strip().lower()
-    return " ".join(s.split())  # collapse internal whitespace
-
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
 def build_chart_df(drug: str) -> pd.DataFrame:
@@ -1072,6 +1066,13 @@ min_m, max_m = con.execute("""
     FROM fact_monthly
     WHERE aemp IS NOT NULL
 """).fetchone()
+# --- Debug: confirm slider bounds from DB ---
+st.caption("Debug: raw month bounds from DB")
+st.write({"min_m_raw": min_m, "max_m_raw": max_m, "types": (type(min_m), type(max_m))})
+if min_m is None or max_m is None:
+    st.error("fact_monthly returned no months with AEMP. Slider cannot be built.")
+    st.stop()
+
 min_m, max_m = pd.to_datetime(min_m), pd.to_datetime(max_m)
 with st.sidebar:
     st.subheader("Time range")
@@ -1133,14 +1134,13 @@ st.write("Apr–Jun rows for:", id_one)
 st.dataframe(subset, use_container_width=True)
 
 # --- Debug: is May under a different identifier? ---
-import re
 id_pick = id_one  # reuse the dropdown choice
 m = re.search(r"\b(\d{5}[A-Z]?)\b", id_pick)  # try to grab the item code from the name (e.g., 10757E)
 item_code_guess = m.group(1) if m else None
 
 cand = filtered_df.assign(month=pd.to_datetime(filtered_df["month"], errors="coerce"))
 if item_code_guess:
-    cand = cand[cand["display_name"].str.contains(item_code_guess, na=False)]
+    cand = cand[cand["display_name"].str.contains(item_code_guess, case=False, na=False)]
 else:
     cand = cand[cand["display_name"] == id_pick]
 
