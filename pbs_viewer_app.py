@@ -429,8 +429,14 @@ def ensure_db(dataset: str) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = (out_dir / filename).resolve()
 
-    # Optional: force refresh
-    force_refresh = os.environ.get(force_var, "").strip().lower() in {"1", "true", "yes"}
+    # Optional: force refresh (env var or Secrets [drive])
+    env_val = os.environ.get(force_var, "").strip().lower()
+    secret_val = ""
+    drive_secrets = st.secrets.get("drive", {})
+    if isinstance(drive_secrets, dict):
+        secret_val = str(drive_secrets.get(force_var, "")).strip().lower()
+
+    force_refresh = env_val in {"1", "true", "yes"} or secret_val in {"1", "true", "yes"}
     if force_refresh and db_path.exists():
         try:
             db_path.unlink()
