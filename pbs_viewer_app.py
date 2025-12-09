@@ -1104,6 +1104,19 @@ with st.sidebar:
 mask = (chart_df["month"] >= pd.to_datetime(start_m)) & (chart_df["month"] <= pd.to_datetime(end_m))
 chart_df = chart_df.loc[mask].copy()
 
+# ---- Identifier picker (no hard cap) ----
+all_ids = sorted(chart_df["display_name"].unique().tolist())
+with st.sidebar:
+    st.subheader("Compare products")
+    select_all = st.checkbox("Select all identifiers", value=False)
+    picked = st.multiselect("Identifiers", options=all_ids, default=[])
+
+# If 'Select all' is on (or nothing picked), show everything
+if select_all or not picked:
+    filtered_df = chart_df
+else:
+    filtered_df = chart_df[chart_df["display_name"].isin(picked)]
+
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
