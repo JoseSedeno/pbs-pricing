@@ -1072,6 +1072,22 @@ st.caption(
     f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y}."
 )
 
+# Per-identifier first and last AEMP month (using all data for the current selection)
+coverage_df = (
+    chart_df.groupby("display_name")["month"]
+            .agg(first_month="min", last_month="max")
+            .reset_index()
+)
+
+coverage_df["First AEMP month"] = coverage_df["first_month"].dt.strftime("%b %Y")
+coverage_df["Last AEMP month"]  = coverage_df["last_month"].dt.strftime("%b %Y")
+
+with st.expander("First and last AEMP month for each identifier", expanded=False):
+    st.dataframe(
+        coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
+        use_container_width=True,
+    )
+
 # Time-range slider (uses chart_df to set bounds)
 min_m, max_m = con.execute("""
     SELECT
