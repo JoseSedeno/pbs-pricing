@@ -1064,6 +1064,13 @@ st.write(f"**Drug(s):** {title_drug}")
 
 if chart_df.empty:
     st.warning("No data for the selected drug(s)."); st.stop()
+    
+# First and last month with AEMP for the current selection (before slider filter)
+first_month = chart_df["month"].min()
+last_month  = chart_df["month"].max()
+st.caption(
+    f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y}."
+)
 
 # Time-range slider (uses chart_df to set bounds)
 min_m, max_m = con.execute("""
