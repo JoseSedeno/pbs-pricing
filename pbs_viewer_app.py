@@ -7,6 +7,7 @@ import streamlit as st
 import altair as alt
 import gdown
 import re
+DEBUG_MODE = False  # Turn to True only when you want to see developer diagnostics
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
@@ -962,7 +963,7 @@ with st.sidebar:
 st.write(f"**Database:** `{DB_PATH}`")
 
 # --- Diagnostics: check Responsible Person in PBS wide_fixed for the first selected drug ---
-if dataset == "PBS AEMP":
+if DEBUG_MODE and dataset == "PBS AEMP":
     test_drug = (selected_drugs or [""])[0]
 
     with st.expander("Diagnostics: Responsible Person in wide_fixed (PBS path)", expanded=True):
@@ -1072,9 +1073,18 @@ min_m, max_m = con.execute("""
     FROM fact_monthly
     WHERE aemp IS NOT NULL
 """).fetchone()
+
 # --- Debug: confirm slider bounds from DB ---
-st.caption("Debug: raw month bounds from DB")
-st.write({"min_m_raw": min_m, "max_m_raw": max_m, "types": (type(min_m), type(max_m))})
+if DEBUG_MODE:
+    st.caption("Debug: raw month bounds from DB")
+    st.write(
+        {
+            "min_m_raw": min_m,
+            "max_m_raw": max_m,
+            "types": (type(min_m), type(max_m)),
+        }
+    )
+
 if min_m is None or max_m is None:
     st.error("fact_monthly returned no months with AEMP. Slider cannot be built.")
     st.stop()
