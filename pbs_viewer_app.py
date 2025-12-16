@@ -1066,8 +1066,9 @@ if chart_df.empty:
     st.warning("No data for the selected drug(s)."); st.stop()
     
 # First and last month with AEMP for the current selection (before slider filter)
-first_month = chart_df["month"].min()
-last_month  = chart_df["month"].max()
+base_for_range = filtered_df if "filtered_df" in locals() and not filtered_df.empty else chart_df
+first_month = base_for_range["month"].min()
+last_month  = base_for_range["month"].max()
 st.caption(
     f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y}."
 )
