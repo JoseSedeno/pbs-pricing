@@ -1077,29 +1077,33 @@ st.write(f"**Drug(s):** {title_drug}")
 if chart_df.empty:
     st.warning("No data for the selected drug(s)."); st.stop()
     
-# First and last month with AEMP for the current selection (before slider filter)
-base_for_range = filtered_df if "filtered_df" in locals() and not filtered_df.empty else chart_df
-first_month = base_for_range["month"].min()
-last_month  = base_for_range["month"].max()
-st.caption(
-    f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y}."
-)
+# ---- Range summaries (must run AFTER filtered_df is created) ----
 
-# Per-identifier first and last AEMP month (using all data for the current selection)
-coverage_df = (
-    chart_df.groupby("display_name")["month"]
-            .agg(first_month="min", last_month="max")
-            .reset_index()
-)
-
-coverage_df["First AEMP month"] = coverage_df["first_month"].dt.strftime("%b %Y")
-coverage_df["Last AEMP month"]  = coverage_df["last_month"].dt.strftime("%b %Y")
-
-with st.expander("First and last AEMP month for each identifier", expanded=False):
-    st.dataframe(
-        coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
-        use_container_width=True,
+# 1) First and last month for whatever is currently being shown (after slider + identifier filters)
+if not filtered_df.empty:
+    first_month = pd.to_datetime(filtered_df["month"]).min()
+    last_month  = pd.to_datetime(filtered_df["month"]).max()
+    st.caption(
+        f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y} (current filters)."
     )
+else:
+    st.caption("For the selected drug(s), no AEMP data is available for the current filters.")
+
+# 2) Per-identifier first and last month (also based on what is currently being shown)
+if not filtered_df.empty:
+    coverage_df = (
+        filtered_df.groupby("display_name")["month"]
+                   .agg(first_month="min", last_month="max")
+                   .reset_index()
+    )
+    coverage_df["First AEMP month"] = pd.to_datetime(coverage_df["first_month"]).dt.strftime("%b %Y")
+    coverage_df["Last AEMP month"]  = pd.to_datetime(coverage_df["last_month"]).dt.strftime("%b %Y")
+
+    with st.expander("First and last AEMP month for each identifier", expanded=False):
+        st.dataframe(
+            coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
+            use_container_width=True,
+        )
 
 # Time-range slider (uses chart_df to set bounds)
 min_m, max_m = con.execute("""
