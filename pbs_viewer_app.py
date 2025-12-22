@@ -7,7 +7,7 @@ import streamlit as st
 import altair as alt
 import gdown
 import re
-DEBUG_MODE = False  # Turn to True only when you want to see developer diagnostics
+DEBUG_MODE = True  # Turn to True only when you want to see developer diagnostics
 st.set_page_config(page_title="PBS AEMP Viewer", layout="wide")
 st.title("PBS AEMP Price Viewer")
 
