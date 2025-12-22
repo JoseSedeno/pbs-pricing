@@ -1077,59 +1077,13 @@ st.write(f"**Drug(s):** {title_drug}")
 if chart_df.empty:
     st.warning("No data for the selected drug(s)."); st.stop()
     
-# ---- Range summaries (must run AFTER filtered_df is created) ----
-
-# 1) First and last month for whatever is currently being shown (after slider + identifier filters)
-if not filtered_df.empty:
-    first_month = pd.to_datetime(filtered_df["month"]).min()
-    last_month  = pd.to_datetime(filtered_df["month"]).max()
-    st.caption(
-        f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y} (current filters)."
-    )
-else:
-    st.caption("For the selected drug(s), no AEMP data is available for the current filters.")
-
-# 2) Per-identifier first and last month (also based on what is currently being shown)
-if not filtered_df.empty:
-    coverage_df = (
-        filtered_df.groupby("display_name")["month"]
-                   .agg(first_month="min", last_month="max")
-                   .reset_index()
-    )
-    coverage_df["First AEMP month"] = pd.to_datetime(coverage_df["first_month"]).dt.strftime("%b %Y")
-    coverage_df["Last AEMP month"]  = pd.to_datetime(coverage_df["last_month"]).dt.strftime("%b %Y")
-
-    with st.expander("First and last AEMP month for each identifier", expanded=False):
-        st.dataframe(
-            coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
-            use_container_width=True,
-        )
-
 # Time-range slider (uses chart_df to set bounds)
-min_m, max_m = con.execute("""
-    SELECT
-      min(date_trunc('month', snapshot_date))::DATE,
-      max(date_trunc('month', snapshot_date))::DATE
-    FROM fact_monthly
-    WHERE aemp IS NOT NULL
-""").fetchone()
+min_m, max_m = chart_df["month"].min(), chart_df["month"].max()
 
-# --- Debug: confirm slider bounds from DB ---
-if DEBUG_MODE:
-    st.caption("Debug: raw month bounds from DB")
-    st.write(
-        {
-            "min_m_raw": min_m,
-            "max_m_raw": max_m,
-            "types": (type(min_m), type(max_m)),
-        }
-    )
-
-if min_m is None or max_m is None:
-    st.error("fact_monthly returned no months with AEMP. Slider cannot be built.")
+if pd.isna(min_m) or pd.isna(max_m):
+    st.error("No valid months in chart data. Slider cannot be built.")
     st.stop()
 
-min_m, max_m = pd.to_datetime(min_m), pd.to_datetime(max_m)
 with st.sidebar:
     st.subheader("Time range")
     start_m, end_m = st.slider(
@@ -1156,6 +1110,39 @@ if select_all or not picked:
     filtered_df = chart_df
 else:
     filtered_df = chart_df[chart_df["display_name"].isin(picked)]
+
+# ---- Range summaries (runs AFTER filtered_df is created) ----
+if filtered_df.empty:
+    st.caption("For the selected drug(s), no AEMP data is available for the current filters.")
+else:
+    # Ensure month is datetime for correct min/max
+    _m = pd.to_datetime(filtered_df["month"], errors="coerce")
+
+    first_month = _m.min()
+    last_month  = _m.max()
+
+    if pd.isna(first_month) or pd.isna(last_month):
+        st.caption("For the selected drug(s), AEMP month data could not be parsed for the current filters.")
+    else:
+        st.caption(
+            f"For the selected drug(s), AEMP data runs from {first_month:%b %Y} to {last_month:%b %Y} (current filters)."
+        )
+
+        coverage_df = (
+            filtered_df.assign(_month=_m)
+                      .dropna(subset=["_month"])
+                      .groupby("display_name")["_month"]
+                      .agg(first_month="min", last_month="max")
+                      .reset_index()
+        )
+        coverage_df["First AEMP month"] = coverage_df["first_month"].dt.strftime("%b %Y")
+        coverage_df["Last AEMP month"]  = coverage_df["last_month"].dt.strftime("%b %Y")
+
+        with st.expander("First and last AEMP month for each identifier", expanded=False):
+            st.dataframe(
+                coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
+                use_container_width=True,
+            )
 
 # ---- Chart ----
 if filtered_df.empty:
