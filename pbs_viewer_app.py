@@ -1039,19 +1039,31 @@ for d in (selected_drugs or []):
     df_d = build_chart_df(d)
     if not df_d.empty:
         df_d = df_d.copy()
+
         # Prefix identifier so the source drug is clear
         df_d["display_name"] = f"{d} · " + df_d["display_name"]
         df_d["__drug__"] = d
+
+        # Make series_id unique across multiple drugs to prevent line merging
+        df_d["series_id"] = f"{d}|" + df_d["series_id"]
+
         frames.append(df_d)
 
 if frames:
     chart_df = pd.concat(frames, ignore_index=True)
 else:
-    chart_df = pd.DataFrame(columns=[
-    "month", "display_name", "aemp",
-    "Item Code", "Responsible Person", "AMT Trade Product Pack",
-    "series_id", "__drug__"
-])
+    chart_df = pd.DataFrame(
+        columns=[
+            "month",
+            "display_name",
+            "aemp",
+            "Item Code",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+            "series_id",
+            "__drug__",
+        ]
+    )
     
 # Ensure clean data for chart
 chart_df["month"] = pd.to_datetime(chart_df["month"], errors="coerce")
