@@ -192,7 +192,7 @@ def main():
     if join_col.lower() not in line_cols_lower:
         raise RuntimeError(f"Join column {join_col} not present in {line_tbl}")
 
-    # 3.4 Snapshot attributes from price table for Brand, Formulary and AMT (E, F, X)
+    # 3.4 Snapshot attributes from price table for Brand, Formulary, AMT, and Responsible Person (E, F, X, I)
     price_cols_all = [r[1] for r in con.execute(f"PRAGMA table_info('{price_tbl}')").fetchall()]
     lmap = {c.lower(): c for c in price_cols_all}
 
@@ -219,6 +219,8 @@ def main():
         pm_aliases[lmap["responsible_person_name"]] = "Responsible Person"
     elif "sponsor" in lmap:
         pm_aliases[lmap["sponsor"]] = "Responsible Person"
+    elif "sponsor_name" in lmap:
+        pm_aliases[lmap["sponsor_name"]] = "Responsible Person"
 
     # Latest-per-item subquery for those fields
     p_meta = None
