@@ -197,14 +197,28 @@ def main():
     lmap = {c.lower(): c for c in price_cols_all}
 
     pm_aliases = {}
+
+    # Brand
     if "brand_name" in lmap:
         pm_aliases[lmap["brand_name"]] = "Brand Name"
+
+    # Formulary
     if "formulary" in lmap:
         pm_aliases[lmap["formulary"]] = "Formulary"
+
+    # AMT
     if "amt_trade_product_pack" in lmap:
         pm_aliases[lmap["amt_trade_product_pack"]] = "AMT Trade Product Pack"
     elif "amt_trade_pack" in lmap:
         pm_aliases[lmap["amt_trade_pack"]] = "AMT Trade Product Pack"
+
+    # Responsible Person
+    if "responsible_person" in lmap:
+        pm_aliases[lmap["responsible_person"]] = "Responsible Person"
+    elif "responsible_person_name" in lmap:
+        pm_aliases[lmap["responsible_person_name"]] = "Responsible Person"
+    elif "sponsor" in lmap:
+        pm_aliases[lmap["sponsor"]] = "Responsible Person"
 
     # Latest-per-item subquery for those fields
     p_meta = None
