@@ -225,3 +225,6 @@ venv/
 out/*.duckdb
 out/*.csv
 out/*.parquet
+
+.streamlit/secrets.toml
+
