@@ -1155,7 +1155,7 @@ else:
         coverage_df = (
             filtered_df.assign(_month=_m)
                       .dropna(subset=["_month"])
-                      .groupby("display_name")["_month"]
+                      .groupby("series_id")["_month"]
                       .agg(first_month="min", last_month="max")
                       .reset_index()
         )
@@ -1164,7 +1164,7 @@ else:
 
         with st.expander("First and last AEMP month for each identifier", expanded=False):
             st.dataframe(
-                coverage_df[["display_name", "First AEMP month", "Last AEMP month"]],
+                coverage_df[["series_id", "First AEMP month", "Last AEMP month"]],
                 use_container_width=True,
             )
 
