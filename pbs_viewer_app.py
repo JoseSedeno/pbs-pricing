@@ -934,9 +934,10 @@ def build_chart_df(drug: str) -> pd.DataFrame:
         if c not in base.columns:
             base[c] = pd.NA
 
-    # Stable grouping key, canonicalised to avoid spacing or case drift
+    # Stable grouping key (do NOT include Item Code, so code changes do not create a new line)
+    # Keep Legal Instrument Form so tablets vs liquids vs injections never merge
     base["series_id"] = (
-        base["Item Code"].map(_canon_val) + "|" +
+        base["Legal Instrument Form"].map(_canon_val) + "|" +
         base["Responsible Person"].map(_canon_val) + "|" +
         base["AMT Trade Product Pack"].map(_canon_val)
     )
