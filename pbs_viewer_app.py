@@ -846,24 +846,47 @@ def build_export_table(drug: str) -> pd.DataFrame:
     ]
     fixed = [c for c in fixed if c in df.columns]
     return df[fixed + month_cols].reset_index(drop=True)
-# Helper to canonicalise key parts for grouping (series_id)
-import re
 
+# Helper to canonicalise key parts for grouping (series_id)
 def _canon_val(x: object) -> str:
     """
-    Canonical string for grouping:
-    - None/NaN/"None"/"nan" -> ""
-    - trim spaces
-    - collapse internal whitespace
+    Canonical string for identifier logic (NOT display):
+
+    Purpose:
+    - Treat cosmetic text differences as the SAME product
+    - Preserve REAL differences like quantity / pack size
+
+    Rules:
+    - None / NaN / empty -> ""
     - lowercase
+    - trim + collapse whitespace
+    - remove punctuation that causes fake differences
+    - normalise small wording noise only
+    - DO NOT normalise quantities (numbers, mL, tablets count, pack counts)
     """
     if x is None:
         return ""
-    s = str(x).strip()
-    if s.lower() in {"", "none", "nan", "<na>"}:
+
+    s = str(x).strip().lower()
+
+    if s in {"", "none", "nan", "<na>"}:
         return ""
+
+    # collapse whitespace
     s = re.sub(r"\s+", " ", s)
-    return s.lower()
+
+    # remove punctuation that causes fake differences (keep hyphens)
+    s = re.sub(r"[,\.;:]", "", s)
+
+    # normalise safe wording noise only
+    s = re.sub(r"\bfilm coated\b", "film-coated", s)
+    s = re.sub(r"\btablets\b", "tablet", s)
+    s = re.sub(r"\bcapsules\b", "capsule", s)
+
+    # final cleanup in case punctuation removal created double spaces
+    s = re.sub(r"\s+", " ", s).strip()
+
+    return s
     
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
