@@ -732,54 +732,57 @@ if dataset == "Chemo EFC":
     show_month_to_month_decreases(con)
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
-meta_sql = f"""
-WITH d AS (
-  SELECT
-    "product_line_id"                           AS product_line_id,
-    {item_code_expr}                            AS item_code_b,
-    "name_a"                                    AS name_a,
-    {form_expr}                                 AS form_src,
-    {resp_expr}                                 AS responsible_person,
-    {line_brand_expr}                           AS line_brand,       -- fallback only
-    {line_formul_expr}                          AS line_formulary    -- fallback only
-  FROM "dim_product_line"
-),
-fm AS (
-  SELECT
-    "product_line_id"                           AS product_line_id,
-    {fm_brand_expr}                             AS fm_brand_name,
-    {fm_formul_expr}                            AS fm_formulary,
-    {fm_amt_expr}                               AS fm_amt_trade_product_pack,
-    {fm_resp_expr}                              AS fm_responsible_person,
-    ROW_NUMBER() OVER (
-      PARTITION BY "product_line_id" ORDER BY "snapshot_date" DESC
-    ) AS rn
-  FROM "fact_monthly"
-)
-SELECT
-  d.product_line_id                             AS product_line_id,
-  d.item_code_b                                 AS "Item Code",
-  d.name_a                                      AS "Legal Instrument Drug",
-  d.form_src                                    AS "Legal Instrument Form",
-  COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST(d.line_brand AS VARCHAR))     AS "Brand Name",
-  CASE
-    WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('1','F1')  THEN 'F1'
-    WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('60','F2') THEN 'F2'
-    WHEN UPPER(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR))) = 'CDL' THEN 'CDL'
-    ELSE NULLIF(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)),'')
-  END                                           AS "Formulary",
-  COALESCE(
-    CAST(d.responsible_person AS VARCHAR),
-    CAST(fm.fm_responsible_person AS VARCHAR)
-  )                                             AS "Responsible Person",
-  fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
-FROM d
-LEFT JOIN fm
-  ON fm.product_line_id = d.product_line_id AND fm.rn = 1
-WHERE lower(d.name_a) = lower(?)
-ORDER BY 1;
-"""
-
+if dataset == "Chemo EFC":
+    meta_sql = f"""
+    WITH d AS (
+      SELECT
+        "product_line_id"                           AS product_line_id,
+        {item_code_expr}                            AS item_code_b,
+        "name_a"                                    AS name_a,
+        {form_expr}                                 AS form_src,
+        {resp_expr}                                 AS responsible_person,
+        {line_brand_expr}                           AS line_brand,
+        {line_formul_expr}                          AS line_formulary
+      FROM "dim_product_line"
+    ),
+    fm AS (
+      SELECT
+        "product_line_id"                           AS product_line_id,
+        {fm_brand_expr}                             AS fm_brand_name,
+        {fm_formul_expr}                            AS fm_formulary,
+        {fm_amt_expr}                               AS fm_amt_trade_product_pack,
+        {fm_resp_expr}                              AS fm_responsible_person,
+        ROW_NUMBER() OVER (
+          PARTITION BY "product_line_id" ORDER BY "snapshot_date" DESC
+        ) AS rn
+      FROM "fact_monthly"
+    )
+    SELECT
+      d.product_line_id                             AS product_line_id,
+      d.item_code_b                                 AS "Item Code",
+      d.name_a                                      AS "Legal Instrument Drug",
+      d.form_src                                    AS "Legal Instrument Form",
+      COALESCE(CAST(fm.fm_brand_name AS VARCHAR), CAST(d.line_brand AS VARCHAR))     AS "Brand Name",
+      CASE
+        WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('1','F1')  THEN 'F1'
+        WHEN COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)) IN ('60','F2') THEN 'F2'
+        WHEN UPPER(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR))) = 'CDL' THEN 'CDL'
+        ELSE NULLIF(COALESCE(CAST(d.line_formulary AS VARCHAR), CAST(fm.fm_formulary AS VARCHAR)),'')
+      END                                           AS "Formulary",
+      COALESCE(
+        CAST(d.responsible_person AS VARCHAR),
+        CAST(fm.fm_responsible_person AS VARCHAR)
+      )                                             AS "Responsible Person",
+      fm.fm_amt_trade_product_pack                  AS "AMT Trade Product Pack"
+    FROM d
+    LEFT JOIN fm
+      ON fm.product_line_id = d.product_line_id AND fm.rn = 1
+    WHERE lower(d.name_a) = lower(?)
+    ORDER BY 1;
+    """
+else:
+    meta_sql = None
+    
 @st.cache_data(show_spinner=False)
 def get_drugs(active_dataset: str):
     # Populate from the active dataset only
