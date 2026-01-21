@@ -994,7 +994,7 @@ def build_chart_df(drug: str) -> pd.DataFrame:
 # ---- Sidebar ----
 with st.sidebar:
     st.subheader("Filters")
-    all_drugs = get_drugs(dataset)
+    all_drugs = get_drugs(dataset, str(DB_PATH), os.path.getmtime(DB_PATH))
     if not all_drugs:
         st.error("No drugs found in dim_product_line."); st.stop()
 
