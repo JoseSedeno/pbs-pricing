@@ -952,13 +952,14 @@ def build_chart_df(drug: str) -> pd.DataFrame:
     )
 
     # Ensure raw key parts exist so schema is stable
-    for c in ["Item Code", "Brand Name", "Legal Instrument Form", "Responsible Person", "AMT Trade Product Pack"]:
+    for c in ["Legal Instrument Drug", "Item Code", "Brand Name", "Legal Instrument Form", "Responsible Person", "AMT Trade Product Pack"]:
         if c not in base.columns:
             base[c] = pd.NA
 
     # Stable grouping key (do NOT include Item Code, so code changes do not create a new line)
     # Keep Legal Instrument Form so tablets vs liquids vs injections never merge
     base["series_id"] = (
+        base["Legal Instrument Drug"].map(_canon_val) + "|" +
         base["Legal Instrument Form"].map(_canon_val) + "|" +
         base["Brand Name"].map(_canon_val) + "|" +
         base["Responsible Person"].map(_canon_val) + "|" +
