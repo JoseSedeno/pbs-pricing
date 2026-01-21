@@ -939,6 +939,7 @@ def build_chart_df(drug: str) -> pd.DataFrame:
     # Keep Legal Instrument Form so tablets vs liquids vs injections never merge
     base["series_id"] = (
         base["Legal Instrument Form"].map(_canon_val) + "|" +
+        base["Brand Name"].map(_canon_val) + "|" +
         base["Responsible Person"].map(_canon_val) + "|" +
         base["AMT Trade Product Pack"].map(_canon_val)
     )
