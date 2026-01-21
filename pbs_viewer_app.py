@@ -679,7 +679,7 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
 
 # Use the unified loader
 df_wide_all, wide_built_at, _ = load_wide_from_db(str(DB_PATH), dataset, DATA_VERSION)
-if wide_built_at:
+if DEBUG_MODE and wide_built_at:
     st.caption(f"Wide table built at: {wide_built_at}")
 
 # ---------- helpers to adapt to schema ----------
