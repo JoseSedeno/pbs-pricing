@@ -795,35 +795,41 @@ def get_drugs(active_dataset: str):
             'SELECT DISTINCT name_a AS drug FROM dim_product_line ORDER BY 1'
         ).df()["drug"].tolist()
 
-@st.cache_data
-def get_series(drug: str, merge_codes: bool):
-    if merge_codes:
-        sql = """
-            SELECT
-              f.snapshot_date::DATE AS month,
-              AVG(f.aemp) AS aemp
-            FROM fact_monthly f
-            JOIN dim_product_line d USING (product_line_id)
-            WHERE lower(d.name_a) = lower(?)
-            GROUP BY 1
-            ORDER BY 1
-        """
-        df = con.execute(sql, [drug]).df()
-    else:
-        sql = f"""
-            SELECT
-              f.snapshot_date::DATE AS month,
-              d.product_line_id     AS product_line_id,
-              {item_code_expr}      AS item_code,
-              f.aemp
-            FROM fact_monthly f
-            JOIN dim_product_line d USING (product_line_id)
-            WHERE lower(d.name_a) = lower(?)
-            ORDER BY 1, 2, 3
-        """
-        df = con.execute(sql, [drug]).df()
+if dataset == "Chemo EFC":
+    @st.cache_data
+    def get_series(drug: str, merge_codes: bool):
+        if merge_codes:
+            sql = """
+                SELECT
+                  f.snapshot_date::DATE AS month,
+                  AVG(f.aemp) AS aemp
+                FROM fact_monthly f
+                JOIN dim_product_line d USING (product_line_id)
+                WHERE lower(d.name_a) = lower(?)
+                GROUP BY 1
+                ORDER BY 1
+            """
+            df = con.execute(sql, [drug]).df()
+        else:
+            sql = f"""
+                SELECT
+                  f.snapshot_date::DATE AS month,
+                  d.product_line_id     AS product_line_id,
+                  {item_code_expr}      AS item_code,
+                  f.aemp
+                FROM fact_monthly f
+                JOIN dim_product_line d USING (product_line_id)
+                WHERE lower(d.name_a) = lower(?)
+                ORDER BY 1, 2, 3
+            """
+            df = con.execute(sql, [drug]).df()
 
-    return df
+        return df
+else:
+    @st.cache_data
+    def get_series(drug: str, merge_codes: bool):
+        # PBS AEMP must never touch Chemo tables
+        return pd.DataFrame(columns=["month", "aemp"])
 
 # ---- Wide table (unchanged) ----
 @st.cache_data
