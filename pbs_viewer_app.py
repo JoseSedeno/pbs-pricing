@@ -931,7 +931,7 @@ def build_chart_df(drug: str) -> pd.DataFrame:
     )
 
     # Ensure raw key parts exist so schema is stable
-    for c in ["Item Code", "Responsible Person", "AMT Trade Product Pack"]:
+    for c in ["Item Code", "Brand Name", "Legal Instrument Form", "Responsible Person", "AMT Trade Product Pack"]:
         if c not in base.columns:
             base[c] = pd.NA
 
