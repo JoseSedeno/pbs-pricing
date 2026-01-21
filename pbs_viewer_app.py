@@ -784,16 +784,22 @@ else:
     meta_sql = None
     
 @st.cache_data(show_spinner=False)
-def get_drugs(active_dataset: str):
-    # Populate from the active dataset only
-    if active_dataset == "PBS AEMP":
-        return con.execute(
-            'SELECT DISTINCT "Legal Instrument Drug" AS drug FROM wide_fixed ORDER BY 1'
-        ).df()["drug"].tolist()
-    else:  # Chemo EFC
-        return con.execute(
-            'SELECT DISTINCT name_a AS drug FROM dim_product_line ORDER BY 1'
-        ).df()["drug"].tolist()
+def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
+    con_local = duckdb.connect(db_path, read_only=True)
+    try:
+        if active_dataset == "PBS AEMP":
+            return con_local.execute(
+                'SELECT DISTINCT "Legal Instrument Drug" AS drug FROM wide_fixed ORDER BY 1'
+            ).df()["drug"].tolist()
+        else:  # Chemo EFC
+            return con_local.execute(
+                'SELECT DISTINCT name_a AS drug FROM dim_product_line ORDER BY 1'
+            ).df()["drug"].tolist()
+    finally:
+        try:
+            con_local.close()
+        except Exception:
+            pass
 
 if dataset == "Chemo EFC":
     @st.cache_data
