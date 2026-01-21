@@ -455,7 +455,8 @@ def ensure_db(dataset: str) -> Path:
         with st.spinner(f"Downloading {dataset} database from Google Drive…"):
             gdown.download(id=drive_id, output=str(db_path), quiet=False)
 
-        st.caption(f"DB path: {db_path}")
+        if DEBUG_MODE:
+            st.caption(f"DB path: {db_path}")
         if not db_path.exists():
             st.error("Database file not found after download.")
             st.stop()
