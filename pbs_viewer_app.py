@@ -717,7 +717,7 @@ if dataset == "Chemo EFC":
 
     fm_brand_expr  = pick_col(fm_cols, "brand_name", default="NULL")
     fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
-    fm_amt_expr    = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", default="NULL")
+    fm_amt_expr = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", "tpp", default="NULL")
     fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
 else:
     # PBS AEMP does NOT use these tables
