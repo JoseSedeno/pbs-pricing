@@ -624,7 +624,7 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     brand_fm    = pick(f, "brand_name")
     formulary_f = pick(f, "formulary")
     resp_fm     = pick(f, "responsible_person", "sponsor", "responsible_person_name")
-    amt_fm      = pick(f, "amt_trade_product_pack", "amt_trade_pack")
+    amt_fm      = pick(f, "amt_trade_product_pack", "amt_trade_pack", "tpp")
 
     sql = f"""
         SELECT
