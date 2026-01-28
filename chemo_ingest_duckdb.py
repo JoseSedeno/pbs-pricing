@@ -79,7 +79,12 @@ OPTIONAL = {
     "Vial Content": ["vial content", "vial contents"],
     "Maximum Amount": ["maximum amount", "max amount", "maximum quantity", "max quantity", "max qty"],
     "Number Repeats": ["number repeats", "max repeats", "maximum repeats"],
-    "AMT Trade Product Pack": ["amt trade product pack", "amt trade product", "trade product pack"],
+    "AMT Trade Product Pack": [
+        "amt trade product pack",
+        "amt trade product",
+        "trade product pack",
+        "tpp",
+    ],
     # metrics to persist:
     "PEMP": ["pemp"],
     "Ex-man Price per Vial": ["ex-man price per vial", "exman price per vial", "ex manufacturer price per vial"],
@@ -463,3 +468,4 @@ def main():
 
 if __name__ == "__main__":
     main()
+
