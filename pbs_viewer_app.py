@@ -425,8 +425,8 @@ def ensure_db(dataset: str) -> Path:
         else:
             st.warning(f"{env_var} set but file missing/small: {p}")
 
-    # 2) Local ./out path
-    out_dir = Path("out")
+    # 2) Local DB path (dataset-aware)
+    out_dir = Path("out_chemo") if dataset == "Chemo EFC" else Path("out")
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = (out_dir / filename).resolve()
 
