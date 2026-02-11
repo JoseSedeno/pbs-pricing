@@ -1207,18 +1207,27 @@ else:
             detail="series_id:N",
             order="month:T",
             tooltip=[
-    alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-    alt.Tooltip("display_name:N", title="Identifier (label)"),
-    alt.Tooltip("Item Code:N", title="Item Code"),
-    alt.Tooltip("Responsible Person:N", title="Responsible Person"),
-    alt.Tooltip("AMT Trade Product Pack:N", title="AMT Trade Product Pack"),
-    alt.Tooltip("aemp:Q", title="AEMP"),
-],
+                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                alt.Tooltip("display_name:N", title="Identifier (label)"),
+                alt.Tooltip("Item Code:N", title="Item Code"),
+                alt.Tooltip("Responsible Person:N", title="Responsible Person"),
+                alt.Tooltip("AMT Trade Product Pack:N", title="AMT Trade Product Pack"),
+                alt.Tooltip("aemp:Q", title="AEMP"),
+            ],
         )
         .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
         .interactive(bind_x=True)
     )
-    st.altair_chart(chart, use_container_width=True)  # <-- this actually renders the chart
+
+    # NEW: split layout into chart (left) and structure panel (right)
+    chart_col, structure_col = st.columns([4, 1])
+
+    with chart_col:
+        st.altair_chart(chart, use_container_width=True)  # renders chart
+
+    with structure_col:
+        st.markdown("### PBS Structure")
+        st.info("Select an identifier to view structure details.")
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
@@ -1233,14 +1242,15 @@ st.caption("Product columns first, then monthly AEMP columns in chronological or
 # Use the first selected drug for the wide table/export
 export_base = selected_drugs[0] if selected_drugs else None
 if not export_base:
-    st.warning("Pick at least one drug to show the wide table/export."); st.stop()
+    st.warning("Pick at least one drug to show the wide table/export.")
+    st.stop()
 
 # Full wide table for that drug
 export_df = build_export_table(export_base)
 
 # Month columns within the slider range
 start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
-end_dt   = pd.to_datetime(end_m).to_period("M").to_timestamp()
+end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
 
 def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
@@ -1263,7 +1273,7 @@ if kept_month_cols:
     nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
     filtered_wide = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
 else:
-    # No months in range → show just headers (empty frame)
+    # No months in range, show just headers (empty frame)
     filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
 st.dataframe(filtered_wide, use_container_width=True)
