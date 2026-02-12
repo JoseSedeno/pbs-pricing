@@ -1192,6 +1192,9 @@ else:
                 use_container_width=True,
             )
 
+# DEBUG: show columns in filtered_df
+st.write("Filtered DF columns:", filtered_df.columns.tolist())
+
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
