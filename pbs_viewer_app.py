@@ -536,6 +536,13 @@ try:
             ).fetchdf()
         )
 
+        # TEMP DEBUG: map attr columns (Chemo only)
+        st.write(
+            con.execute(
+                "SELECT product_line_id, attr_c, attr_f, attr_g FROM dim_product_line LIMIT 5"
+            ).fetchdf()
+        )
+
 except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
