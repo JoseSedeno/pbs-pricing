@@ -526,10 +526,20 @@ DATA_VERSION = (dataset, os.path.getmtime(DB_PATH))
 # ---- Open DuckDB ----
 try:
     con = duckdb.connect(str(DB_PATH), read_only=True)
+
+    # TEMP DEBUG: check dim_product_line exists and show one row (Chemo only)
+    if dataset == "Chemo EFC":
+        st.write("dim_product_line sample:")
+        st.write(
+            con.execute(
+                "SELECT * FROM dim_product_line LIMIT 1"
+            ).fetchdf()
+        )
+
 except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
-    
+   
 # ---- Load a wide table for BOTH datasets (PBS uses stored wide; Chemo builds on the fly) ----
 @st.cache_data(show_spinner=False)
 def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
