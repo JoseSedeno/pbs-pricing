@@ -526,23 +526,7 @@ DATA_VERSION = (dataset, os.path.getmtime(DB_PATH))
 # ---- Open DuckDB ----
 try:
     con = duckdb.connect(str(DB_PATH), read_only=True)
-
-    # TEMP DEBUG: check dim_product_line exists and show one row (Chemo only)
-    if dataset == "Chemo EFC":
-        st.write("dim_product_line sample:")
-        st.write(
-            con.execute(
-                "SELECT * FROM dim_product_line LIMIT 1"
-            ).fetchdf()
-        )
-
-        # TEMP DEBUG: map attr columns (Chemo only)
-        st.write(
-            con.execute(
-                "SELECT product_line_id, attr_c, attr_f, attr_g FROM dim_product_line LIMIT 5"
-            ).fetchdf()
-        )
-
+    
 except Exception as e:
     st.error(f"DuckDB couldn’t open the DB at {DB_PATH}.\n\n{e}")
     st.stop()
