@@ -1193,9 +1193,6 @@ else:
                 use_container_width=True,
             )
 
-# DEBUG: show columns in filtered_df
-st.write("Filtered DF columns:", filtered_df.columns.tolist())
-
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
@@ -1231,7 +1228,29 @@ else:
 
     with structure_col:
         st.markdown("### PBS Structure")
-        st.info("Select an identifier to view structure details.")
+
+        visible_ids = filtered_df["series_id"].dropna().unique().tolist()
+
+        if not visible_ids:
+            st.info("No identifiers available.")
+        else:
+            placeholders = ",".join(["?"] * len(visible_ids))
+
+            structure_sql = f"""
+                SELECT
+                    product_line_id AS series_id,
+                    name_a AS drug,
+                    item_code_b AS item_code,
+                    attr_c AS legal_instrument_form,
+                    attr_f AS formulary,
+                    attr_g AS program
+                FROM dim_product_line
+                WHERE product_line_id IN ({placeholders})
+                ORDER BY name_a, item_code_b, attr_f, attr_g
+            """
+
+            structure_df = con.execute(structure_sql, visible_ids).fetchdf()
+            st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
