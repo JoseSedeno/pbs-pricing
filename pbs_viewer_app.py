@@ -1234,36 +1234,28 @@ else:
         with structure_col:
             st.markdown("### PBS Structure")
 
-            visible_item_codes = (
-                filtered_df["Item Code"].dropna().astype(str).unique().tolist()
-                if "Item Code" in filtered_df.columns
-                else []
-            )
+            # Show structure directly from the currently visible rows (no DB query)
+            structure_cols = [
+                "Item Code",
+                "Legal Instrument Drug",
+                "Legal Instrument Form",
+                "Brand Name",
+                "Formulary",
+                "Responsible Person",
+                "AMT Trade Product Pack",
+            ]
+            structure_cols = [c for c in structure_cols if c in filtered_df.columns]
 
-            if not visible_item_codes:
-                st.info("No item codes available for the current selection.")
+            if not structure_cols:
+                st.info("No structure columns available.")
             else:
-                placeholders = ",".join(["?"] * len(visible_item_codes))
-
-                structure_sql = f"""
-                    SELECT
-                        product_line_id AS product_line_id,
-                        name_a AS drug,
-                        item_code_b AS item_code,
-                        attr_c AS legal_instrument_form,
-                        attr_f AS formulary,
-                        attr_g AS program,
-                        brand_name AS brand_name,
-                        responsible_person AS responsible_person,
-                        amt_trade_pack AS amt_trade_pack
-                    FROM dim_product_line
-                    WHERE lower(name_a) = lower(?)
-                      AND CAST(item_code_b AS VARCHAR) IN ({placeholders})
-                    ORDER BY name_a, item_code_b, attr_f, attr_g, brand_name
-                """
-
-                params = [title_drug] + visible_item_codes
-                structure_df = con.execute(structure_sql, params).fetchdf()
+                structure_df = (
+                    filtered_df[structure_cols]
+                    .dropna(how="all")
+                    .drop_duplicates()
+                    .sort_values(structure_cols, kind="mergesort")
+                    .reset_index(drop=True)
+                )
                 st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
