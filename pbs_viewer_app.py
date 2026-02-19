@@ -1226,7 +1226,8 @@ else:
 
     # Chemo: split chart and structure panel (NO DB QUERY)
     else:
-        chart_col, structure_col = st.columns([5, 2])
+        # Give the structure panel more space so headers and long text do not get clipped
+        chart_col, structure_col = st.columns([4, 3])
 
         with chart_col:
             st.altair_chart(chart, use_container_width=True)
@@ -1234,7 +1235,6 @@ else:
         with structure_col:
             st.markdown("### Chemo structure")
 
-            # Use visible rows only, avoid DuckDB joins because series_id is not product_line_id
             structure_cols = [
                 "Item Code",
                 "Responsible Person",
@@ -1278,10 +1278,7 @@ def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
 
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-kept_month_cols = [
-    c for c in month_cols_all
-    if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
-]
+kept_month_cols = [c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
 
 fixed_cols = [
     "Item Code",
