@@ -1224,7 +1224,7 @@ else:
     if dataset != "Chemo EFC":
         st.altair_chart(chart, use_container_width=True)
 
-    # Chemo: split chart and structure panel
+    # Chemo: split chart and structure panel (NO DB QUERY)
     else:
         chart_col, structure_col = st.columns([5, 2])
 
@@ -1234,13 +1234,9 @@ else:
         with structure_col:
             st.markdown("### PBS Structure")
 
-            # Show structure directly from the currently visible rows (no DB query)
+            # Use visible rows only, avoid DuckDB joins because series_id is not product_line_id
             structure_cols = [
                 "Item Code",
-                "Legal Instrument Drug",
-                "Legal Instrument Form",
-                "Brand Name",
-                "Formulary",
                 "Responsible Person",
                 "AMT Trade Product Pack",
             ]
@@ -1261,7 +1257,7 @@ else:
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
     filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
-    use_container_width=True
+    use_container_width=True,
 )
 
 # ---- Wide table & download (respects time range; drops empty rows) ----
@@ -1282,7 +1278,10 @@ def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
 
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-kept_month_cols = [c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
+kept_month_cols = [
+    c for c in month_cols_all
+    if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
+]
 
 fixed_cols = [
     "Item Code",
@@ -1296,7 +1295,10 @@ fixed_cols = [
 
 if kept_month_cols:
     nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
-    filtered_wide = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
+    filtered_wide = export_df.loc[
+        nonempty_mask,
+        [c for c in fixed_cols if c in export_df.columns] + kept_month_cols
+    ]
 else:
     filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
