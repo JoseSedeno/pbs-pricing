@@ -1232,7 +1232,7 @@ else:
             st.altair_chart(chart, use_container_width=True)
 
         with structure_col:
-            st.markdown("### PBS Structure")
+            st.markdown("### Chemo structure" if dataset == "Chemo EFC" else "### PBS Structure")
 
             # Use visible rows only, avoid DuckDB joins because series_id is not product_line_id
             structure_cols = [
