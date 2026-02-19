@@ -1220,37 +1220,51 @@ else:
         .interactive(bind_x=True)
     )
 
-    # NEW: split layout into chart (left) and structure panel (right)
-    chart_col, structure_col = st.columns([4, 1])
+    # PBS: keep exactly as before, full width chart only
+    if dataset != "Chemo EFC":
+        st.altair_chart(chart, use_container_width=True)
 
-    with chart_col:
-        st.altair_chart(chart, use_container_width=True)  # renders chart
+    # Chemo: split chart and structure panel
+    else:
+        chart_col, structure_col = st.columns([5, 2])
 
-    with structure_col:
-        st.markdown("### PBS Structure")
+        with chart_col:
+            st.altair_chart(chart, use_container_width=True)
 
-        visible_ids = filtered_df["series_id"].dropna().unique().tolist()
+        with structure_col:
+            st.markdown("### PBS Structure")
 
-        if not visible_ids:
-            st.info("No identifiers available.")
-        else:
-            placeholders = ",".join(["?"] * len(visible_ids))
+            visible_item_codes = (
+                filtered_df["Item Code"].dropna().astype(str).unique().tolist()
+                if "Item Code" in filtered_df.columns
+                else []
+            )
 
-            structure_sql = f"""
-                SELECT
-                    product_line_id AS series_id,
-                    name_a AS drug,
-                    item_code_b AS item_code,
-                    attr_c AS legal_instrument_form,
-                    attr_f AS formulary,
-                    attr_g AS program
-                FROM dim_product_line
-                WHERE product_line_id IN ({placeholders})
-                ORDER BY name_a, item_code_b, attr_f, attr_g
-            """
+            if not visible_item_codes:
+                st.info("No item codes available for the current selection.")
+            else:
+                placeholders = ",".join(["?"] * len(visible_item_codes))
 
-            structure_df = con.execute(structure_sql, visible_ids).fetchdf()
-            st.dataframe(structure_df, use_container_width=True)
+                structure_sql = f"""
+                    SELECT
+                        product_line_id AS product_line_id,
+                        name_a AS drug,
+                        item_code_b AS item_code,
+                        attr_c AS legal_instrument_form,
+                        attr_f AS formulary,
+                        attr_g AS program,
+                        brand_name AS brand_name,
+                        responsible_person AS responsible_person,
+                        amt_trade_pack AS amt_trade_pack
+                    FROM dim_product_line
+                    WHERE lower(name_a) = lower(?)
+                      AND CAST(item_code_b AS VARCHAR) IN ({placeholders})
+                    ORDER BY name_a, item_code_b, attr_f, attr_g, brand_name
+                """
+
+                params = [title_drug] + visible_item_codes
+                structure_df = con.execute(structure_sql, params).fetchdf()
+                st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
@@ -1262,16 +1276,13 @@ st.dataframe(
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 
-# Use the first selected drug for the wide table/export
 export_base = selected_drugs[0] if selected_drugs else None
 if not export_base:
     st.warning("Pick at least one drug to show the wide table/export.")
     st.stop()
 
-# Full wide table for that drug
 export_df = build_export_table(export_base)
 
-# Month columns within the slider range
 start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
 end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
 
@@ -1281,7 +1292,6 @@ def _col_to_month(col: str) -> pd.Timestamp:
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
 kept_month_cols = [c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
 
-# Keep only rows with at least one non-null value in the kept months
 fixed_cols = [
     "Item Code",
     "Legal Instrument Drug",
@@ -1296,17 +1306,15 @@ if kept_month_cols:
     nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
     filtered_wide = export_df.loc[nonempty_mask, [c for c in fixed_cols if c in export_df.columns] + kept_month_cols]
 else:
-    # No months in range, show just headers (empty frame)
     filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
 st.dataframe(filtered_wide, use_container_width=True)
 
-# Download button (filename includes the selected range)
 file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
 export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
 st.download_button(
     label=f"Download AEMP wide CSV: {export_base}",
     data=export_csv,
-    file_name=f"{export_base.replace(' ','_').lower()}_{file_range}_aemp_wide.csv",
+    file_name=f"{export_base.replace(' ', '_').lower()}_{file_range}_aemp_wide.csv",
     mime="text/csv",
 )
