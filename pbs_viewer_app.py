@@ -1279,7 +1279,10 @@ def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
 
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-kept_month_cols = [c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)]
+kept_month_cols = [
+    c for c in month_cols_all
+    if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
+]
 
 fixed_cols = [
     "Item Code",
