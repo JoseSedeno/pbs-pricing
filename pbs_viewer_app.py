@@ -1196,6 +1196,7 @@ else:
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
+
 else:
     chart = (
         alt.Chart(filtered_df.sort_values("month"))
@@ -1204,7 +1205,15 @@ else:
         .encode(
             x=alt.X("month:T", sort=None, axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
             y=alt.Y("aemp:Q", title="AEMP"),
-            color=alt.Color("series_id:N", title="Identifier"),
+
+            # Show full identifier text in legend (no truncation)
+            color=alt.Color(
+                "display_name:N",
+                title="Identifier",
+                legend=alt.Legend(labelLimit=0),
+            ),
+
+            # Keep series_id as the true grouping key (prevents accidental merges if labels collide)
             detail="series_id:N",
             order="month:T",
             tooltip=[
@@ -1256,10 +1265,13 @@ else:
                 st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
-st.dataframe(
-    filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
-    use_container_width=True,
-)
+if filtered_df.empty:
+    st.info("No rows to show in the table for the current filters.")
+else:
+    st.dataframe(
+        filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
+        use_container_width=True,
+    )
 
 # ---- Wide table & download (respects time range; drops empty rows) ----
 st.markdown("### Item info + AEMP by month (wide)")
