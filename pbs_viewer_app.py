@@ -1196,23 +1196,24 @@ else:
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
-
 else:
     chart = (
         alt.Chart(filtered_df.sort_values("month"))
         .transform_filter(alt.datum.aemp != None)
         .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
         .encode(
-            x=alt.X("month:T", sort=None, axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0)),
+            x=alt.X(
+                "month:T",
+                sort=None,
+                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
+            ),
             y=alt.Y("aemp:Q", title="AEMP"),
-
-            # Show full identifier text in legend (no truncation)
+            # Show full identifier text in the legend (no truncation)
             color=alt.Color(
                 "display_name:N",
                 title="Identifier",
                 legend=alt.Legend(labelLimit=0),
             ),
-
             # Keep series_id as the true grouping key (prevents accidental merges if labels collide)
             detail="series_id:N",
             order="month:T",
@@ -1225,7 +1226,10 @@ else:
                 alt.Tooltip("aemp:Q", title="AEMP"),
             ],
         )
-        .properties(height=450, title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"))
+        .properties(
+            height=450,
+            title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+        )
         .interactive(bind_x=True)
     )
 
@@ -1269,7 +1273,9 @@ if filtered_df.empty:
     st.info("No rows to show in the table for the current filters.")
 else:
     st.dataframe(
-        filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[["Month", "display_name", "aemp"]],
+        filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
+            ["Month", "display_name", "aemp"]
+        ],
         use_container_width=True,
     )
 
