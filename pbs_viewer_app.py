@@ -1224,36 +1224,36 @@ else:
     if dataset != "Chemo EFC":
         st.altair_chart(chart, use_container_width=True)
 
-   # Chemo: split chart and structure panel (NO DB QUERY)
-else:
-    # Give the structure panel more space so headers and long text do not get clipped
-    chart_col, structure_col = st.columns([4, 3])
+    # Chemo: split chart and structure panel (NO DB QUERY)
+    else:
+        # Give the structure panel more space so headers and long text do not get clipped
+        chart_col, structure_col = st.columns([4, 3])
 
-    with chart_col:
-        st.altair_chart(chart, use_container_width=True)
+        with chart_col:
+            st.altair_chart(chart, use_container_width=True)
 
-    with structure_col:
-        st.caption("CHEMO STRUCTURE PANEL v1.0")
-        st.markdown("### Chemo structure")
+        with structure_col:
+            st.caption("CHEMO STRUCTURE PANEL v1.0")
+            st.markdown("### Chemo structure")
 
-        structure_cols = [
-            "Item Code",
-            "Responsible Person",
-            "AMT Trade Product Pack",
-        ]
-        structure_cols = [c for c in structure_cols if c in filtered_df.columns]
+            structure_cols = [
+                "Item Code",
+                "Responsible Person",
+                "AMT Trade Product Pack",
+            ]
+            structure_cols = [c for c in structure_cols if c in filtered_df.columns]
 
-        if not structure_cols:
-            st.info("No structure columns available.")
-        else:
-            structure_df = (
-                filtered_df[structure_cols]
-                .dropna(how="all")
-                .drop_duplicates()
-                .sort_values(structure_cols, kind="mergesort")
-                .reset_index(drop=True)
-            )
-            st.dataframe(structure_df, use_container_width=True)
+            if not structure_cols:
+                st.info("No structure columns available.")
+            else:
+                structure_df = (
+                    filtered_df[structure_cols]
+                    .dropna(how="all")
+                    .drop_duplicates()
+                    .sort_values(structure_cols, kind="mergesort")
+                    .reset_index(drop=True)
+                )
+                st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month → Identifier → AEMP) ----
 st.dataframe(
