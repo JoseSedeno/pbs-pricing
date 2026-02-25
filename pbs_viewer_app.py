@@ -1196,7 +1196,6 @@ else:
 # ---- Chart ----
 if filtered_df.empty:
     st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
-
 else:
     chart = (
         alt.Chart(filtered_df.sort_values("month"))
@@ -1209,17 +1208,14 @@ else:
                 axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
             ),
             y=alt.Y("aemp:Q", title="AEMP"),
-
-            # Use original grouping key
+            # Use original grouping key (series_id)
             color=alt.Color(
                 "series_id:N",
                 title="Identifier",
                 legend=alt.Legend(labelLimit=0),
             ),
-
             detail="series_id:N",
             order="month:T",
-
             tooltip=[
                 alt.Tooltip("month:T", title="Month", format="%Y-%m"),
                 alt.Tooltip("display_name:N", title="Identifier (label)"),
