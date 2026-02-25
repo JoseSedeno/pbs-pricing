@@ -1208,11 +1208,16 @@ else:
                 axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
             ),
             y=alt.Y("aemp:Q", title="AEMP"),
-            # Use original grouping key (series_id)
+            # Use original grouping key
             color=alt.Color(
                 "series_id:N",
                 title="Identifier",
-                legend=alt.Legend(labelLimit=0),
+                legend=alt.Legend(
+                    orient="bottom",
+                    direction="horizontal",
+                    labelLimit=0,
+                    titleLimit=0,
+                ),
             ),
             detail="series_id:N",
             order="month:T",
@@ -1232,41 +1237,34 @@ else:
         .interactive(bind_x=True)
     )
 
-    # PBS: keep exactly as before, full width chart only
-    if dataset != "Chemo EFC":
-        st.altair_chart(chart, use_container_width=True)
+    # Always show the chart full width, legend sits at the bottom of the chart
+    st.altair_chart(chart, use_container_width=True)
 
-    # Chemo: split chart and structure panel (NO DB QUERY)
-    else:
-        chart_col, structure_col = st.columns([4, 3])
+    # Chemo only: show the structure panel under the chart (no DB query)
+    if dataset == "Chemo EFC":
+        st.caption("CHEMO STRUCTURE PANEL v1.0")
+        st.markdown("### Chemo structure")
 
-        with chart_col:
-            st.altair_chart(chart, use_container_width=True)
+        structure_cols = [
+            "Item Code",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+        ]
+        structure_cols = [c for c in structure_cols if c in filtered_df.columns]
 
-        with structure_col:
-            st.caption("CHEMO STRUCTURE PANEL v1.0")
-            st.markdown("### Chemo structure")
+        if not structure_cols:
+            st.info("No structure columns available.")
+        else:
+            structure_df = (
+                filtered_df[structure_cols]
+                .dropna(how="all")
+                .drop_duplicates()
+                .sort_values(structure_cols, kind="mergesort")
+                .reset_index(drop=True)
+            )
+            st.dataframe(structure_df, use_container_width=True)
 
-            structure_cols = [
-                "Item Code",
-                "Responsible Person",
-                "AMT Trade Product Pack",
-            ]
-            structure_cols = [c for c in structure_cols if c in filtered_df.columns]
-
-            if not structure_cols:
-                st.info("No structure columns available.")
-            else:
-                structure_df = (
-                    filtered_df[structure_cols]
-                    .dropna(how="all")
-                    .drop_duplicates()
-                    .sort_values(structure_cols, kind="mergesort")
-                    .reset_index(drop=True)
-                )
-                st.dataframe(structure_df, use_container_width=True)
-
-# ---- Small table under the chart (Month → Identifier → AEMP) ----
+# ---- Small table under the chart (Month to Identifier to AEMP) ----
 if filtered_df.empty:
     st.info("No rows to show in the table for the current filters.")
 else:
@@ -1277,7 +1275,7 @@ else:
         use_container_width=True,
     )
 
-# ---- Wide table & download (respects time range; drops empty rows) ----
+# ---- Wide table and download (respects time range; drops empty rows) ----
 st.markdown("### Item info + AEMP by month (wide)")
 st.caption("Product columns first, then monthly AEMP columns in chronological order.")
 
