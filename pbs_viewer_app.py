@@ -1195,7 +1195,9 @@ else:
 
 # ---- Chart ----
 if filtered_df.empty:
-    st.info("No series to plot with the current filters. Try widening the time range or clearing Identifier picks.")
+    st.info(
+        "No series to plot with the current filters. Try widening the time range or clearing Identifier picks."
+    )
 else:
     chart = (
         alt.Chart(filtered_df.sort_values("month"))
@@ -1208,7 +1210,7 @@ else:
                 axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
             ),
             y=alt.Y("aemp:Q", title="AEMP"),
-            # Use original grouping key
+            # Keep original grouping key
             color=alt.Color(
                 "series_id:N",
                 title="Identifier",
@@ -1237,7 +1239,7 @@ else:
         .interactive(bind_x=True)
     )
 
-    # Always show the chart full width, legend sits at the bottom of the chart
+    # Always show the chart full width
     st.altair_chart(chart, use_container_width=True)
 
     # Chemo only: show the structure panel under the chart (no DB query)
@@ -1265,15 +1267,16 @@ else:
             st.dataframe(structure_df, use_container_width=True)
 
 # ---- Small table under the chart (Month to Identifier to AEMP) ----
-if filtered_df.empty:
-    st.info("No rows to show in the table for the current filters.")
-else:
-    st.dataframe(
-        filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
-            ["Month", "display_name", "aemp"]
-        ],
-        use_container_width=True,
-    )
+with st.expander("Show raw rows (Month to Identifier to AEMP)", expanded=False):
+    if filtered_df.empty:
+        st.info("No rows to show in the table for the current filters.")
+    else:
+        st.dataframe(
+            filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
+                ["Month", "display_name", "aemp"]
+            ],
+            use_container_width=True,
+        )
 
 # ---- Wide table and download (respects time range; drops empty rows) ----
 st.markdown("### Item info + AEMP by month (wide)")
@@ -1289,13 +1292,14 @@ export_df = build_export_table(export_base)
 start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
 end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
 
+
 def _col_to_month(col: str) -> pd.Timestamp:
     return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
 
+
 month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
 kept_month_cols = [
-    c for c in month_cols_all
-    if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
+    c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
 ]
 
 fixed_cols = [
@@ -1312,7 +1316,7 @@ if kept_month_cols:
     nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
     filtered_wide = export_df.loc[
         nonempty_mask,
-        [c for c in fixed_cols if c in export_df.columns] + kept_month_cols
+        [c for c in fixed_cols if c in export_df.columns] + kept_month_cols,
     ]
 else:
     filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
