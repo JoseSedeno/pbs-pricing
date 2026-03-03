@@ -1193,142 +1193,183 @@ else:
                 use_container_width=True,
             )
 
-# ---- Chart ----
-if filtered_df.empty:
-    st.info(
-        "No series to plot with the current filters. Try widening the time range or clearing Identifier picks."
-    )
-else:
-    chart = (
-        alt.Chart(filtered_df.sort_values("month"))
-        .transform_filter(alt.datum.aemp != None)
-        .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
-        .encode(
-            x=alt.X(
-                "month:T",
-                sort=None,
-                axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
-            ),
-            y=alt.Y("aemp:Q", title="AEMP"),
-            # Keep original grouping key
-            color=alt.Color(
-                "series_id:N",
-                title="Identifier",
-                legend=alt.Legend(
-                    orient="bottom",
-                    direction="horizontal",
-                    labelLimit=0,
-                    titleLimit=0,
-                ),
-            ),
-            detail="series_id:N",
-            order="month:T",
-            tooltip=[
-                alt.Tooltip("month:T", title="Month", format="%Y-%m"),
-                alt.Tooltip("display_name:N", title="Identifier (label)"),
-                alt.Tooltip("Item Code:N", title="Item Code"),
-                alt.Tooltip("Responsible Person:N", title="Responsible Person"),
-                alt.Tooltip("AMT Trade Product Pack:N", title="AMT Trade Product Pack"),
-                alt.Tooltip("aemp:Q", title="AEMP"),
-            ],
-        )
-        .properties(
-            height=450,
-            title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
-        )
-        .interactive(bind_x=True)
-    )
+# ---- Tabs (main content) ----
+tab_price, tab_export, tab_analytics = st.tabs(["Price evolution", "Export", "Analytics"])
 
-    # Always show the chart full width
-    st.altair_chart(chart, use_container_width=True)
-
-    # Chemo only: show the structure panel under the chart (no DB query)
-    if dataset == "Chemo EFC":
-        st.caption("CHEMO STRUCTURE PANEL v1.0")
-        st.markdown("### Chemo structure")
-
-        structure_cols = [
-            "Item Code",
-            "Responsible Person",
-            "AMT Trade Product Pack",
-        ]
-        structure_cols = [c for c in structure_cols if c in filtered_df.columns]
-
-        if not structure_cols:
-            st.info("No structure columns available.")
-        else:
-            structure_df = (
-                filtered_df[structure_cols]
-                .dropna(how="all")
-                .drop_duplicates()
-                .sort_values(structure_cols, kind="mergesort")
-                .reset_index(drop=True)
-            )
-            st.dataframe(structure_df, use_container_width=True)
-
-# ---- Small table under the chart (Month to Identifier to AEMP) ----
-with st.expander("Show raw rows (Month to Identifier to AEMP)", expanded=False):
+with tab_price:
+    # ---- Chart ----
     if filtered_df.empty:
-        st.info("No rows to show in the table for the current filters.")
+        st.info(
+            "No series to plot with the current filters. Try widening the time range or clearing Identifier picks."
+        )
     else:
-        st.dataframe(
-            filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
-                ["Month", "display_name", "aemp"]
-            ],
-            use_container_width=True,
+        # Build a stable domain (unique series_id in view) for consistent colours
+        series_domain = (
+            filtered_df[["series_id"]]
+            .drop_duplicates()
+            .sort_values(["series_id"], kind="mergesort")["series_id"]
+            .tolist()
         )
 
-# ---- Wide table and download (respects time range; drops empty rows) ----
-st.markdown("### Item info + AEMP by month (wide)")
-st.caption("Product columns first, then monthly AEMP columns in chronological order.")
+        # 60-colour palette (Vega category20 + category20b + category20c)
+        PALETTE_60 = [
+            # category20
+            "#1f77b4", "#aec7e8", "#ff7f0e", "#ffbb78", "#2ca02c", "#98df8a",
+            "#d62728", "#ff9896", "#9467bd", "#c5b0d5", "#8c564b", "#c49c94",
+            "#e377c2", "#f7b6d2", "#7f7f7f", "#c7c7c7", "#bcbd22", "#dbdb8d",
+            "#17becf", "#9edae5",
+            # category20b
+            "#393b79", "#5254a3", "#6b6ecf", "#9c9ede", "#637939", "#8ca252",
+            "#b5cf6b", "#cedb9c", "#8c6d31", "#bd9e39", "#e7ba52", "#e7cb94",
+            "#843c39", "#ad494a", "#d6616b", "#e7969c", "#7b4173", "#a55194",
+            "#ce6dbd", "#de9ed6",
+            # category20c
+            "#3182bd", "#6baed6", "#9ecae1", "#c6dbef", "#e6550d", "#fd8d3c",
+            "#fdae6b", "#fdd0a2", "#31a354", "#74c476", "#a1d99b", "#c7e9c0",
+            "#756bb1", "#9e9ac8", "#bcbddc", "#dadaeb", "#636363", "#969696",
+            "#bdbdbd", "#d9d9d9",
+        ]
 
-export_base = selected_drugs[0] if selected_drugs else None
-if not export_base:
-    st.warning("Pick at least one drug to show the wide table/export.")
-    st.stop()
+        if len(series_domain) > 60:
+            st.caption(
+                "More than 60 identifiers are in view, colours repeat. Use the Identifiers filter to focus on fewer series."
+            )
 
-export_df = build_export_table(export_base)
+        series_range = [PALETTE_60[i % 60] for i in range(len(series_domain))]
+        color_map = dict(zip(series_domain, series_range))
 
-start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
-end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
+        chart = (
+            alt.Chart(filtered_df.sort_values("month"))
+            .transform_filter(alt.datum.aemp != None)
+            .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
+            .encode(
+                x=alt.X(
+                    "month:T",
+                    sort=None,
+                    axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
+                ),
+                y=alt.Y("aemp:Q", title="AEMP"),
+                # Keep original grouping key, but use our stable colour map and hide the Altair legend
+                color=alt.Color(
+                    "series_id:N",
+                    scale=alt.Scale(domain=series_domain, range=series_range),
+                    legend=None,
+                ),
+                detail="series_id:N",
+                order="month:T",
+                tooltip=[
+                    alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                    alt.Tooltip("display_name:N", title="Identifier (label)"),
+                    alt.Tooltip("Item Code:N", title="Item Code"),
+                    alt.Tooltip("Responsible Person:N", title="Responsible Person"),
+                    alt.Tooltip("AMT Trade Product Pack:N", title="AMT Trade Product Pack"),
+                    alt.Tooltip("aemp:Q", title="AEMP"),
+                ],
+            )
+            .properties(
+                height=450,
+                title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+            )
+            .interactive(bind_x=True)
+        )
 
+        st.altair_chart(chart, use_container_width=True)
 
-def _col_to_month(col: str) -> pd.Timestamp:
-    return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
+        # ---- Full identifiers list with matching colours (scrollable) ----
+        with st.expander("Show full identifiers list", expanded=False):
+            if filtered_df.empty:
+                st.info("No identifiers to show for the current filters.")
+            else:
+                id_df = (
+                    filtered_df[["series_id", "display_name"]]
+                    .drop_duplicates()
+                    .sort_values(["display_name"], kind="mergesort")
+                    .reset_index(drop=True)
+                )
+                id_df["dot"] = "●"
+                id_df["__color__"] = id_df["series_id"].map(color_map)
 
+                def _style_row(row):
+                    c = row.get("__color__", "")
+                    if isinstance(c, str) and c:
+                        return [f"color: {c}; font-weight: 700;", "" , ""]
+                    return ["", "", ""]
 
-month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-kept_month_cols = [
-    c for c in month_cols_all if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
-]
+                styled = (
+                    id_df[["dot", "display_name", "__color__"]]
+                    .style.apply(_style_row, axis=1)
+                    .hide(axis="columns", subset=["__color__"])
+                )
 
-fixed_cols = [
-    "Item Code",
-    "Legal Instrument Drug",
-    "Legal Instrument Form",
-    "Brand Name",
-    "Formulary",
-    "Responsible Person",
-    "AMT Trade Product Pack",
-]
+                st.dataframe(styled, use_container_width=True, height=420)
 
-if kept_month_cols:
-    nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
-    filtered_wide = export_df.loc[
-        nonempty_mask,
-        [c for c in fixed_cols if c in export_df.columns] + kept_month_cols,
+    # ---- Small table under the chart (Month to Identifier to AEMP) ----
+    with st.expander("Show raw rows (Month to Identifier to AEMP)", expanded=False):
+        if filtered_df.empty:
+            st.info("No rows to show in the table for the current filters.")
+        else:
+            st.dataframe(
+                filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
+                    ["Month", "display_name", "aemp"]
+                ],
+                use_container_width=True,
+            )
+
+with tab_export:
+    # ---- Wide table and download (respects time range; drops empty rows) ----
+    st.markdown("### Item info + AEMP by month (wide)")
+    st.caption("Product columns first, then monthly AEMP columns in chronological order.")
+
+    export_base = selected_drugs[0] if selected_drugs else None
+    if not export_base:
+        st.warning("Pick at least one drug to show the wide table/export.")
+        st.stop()
+
+    export_df = build_export_table(export_base)
+
+    start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
+    end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
+
+    def _col_to_month(col: str) -> pd.Timestamp:
+        return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
+
+    month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
+    kept_month_cols = [
+        c
+        for c in month_cols_all
+        if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
     ]
-else:
-    filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
-st.dataframe(filtered_wide, use_container_width=True)
+    fixed_cols = [
+        "Item Code",
+        "Legal Instrument Drug",
+        "Legal Instrument Form",
+        "Brand Name",
+        "Formulary",
+        "Responsible Person",
+        "AMT Trade Product Pack",
+    ]
 
-file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
-export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
+    if kept_month_cols:
+        nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
+        filtered_wide = export_df.loc[
+            nonempty_mask,
+            [c for c in fixed_cols if c in export_df.columns] + kept_month_cols,
+        ]
+    else:
+        filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
 
-st.download_button(
-    label=f"Download AEMP wide CSV: {export_base}",
-    data=export_csv,
-    file_name=f"{export_base.replace(' ', '_').lower()}_{file_range}_aemp_wide.csv",
-    mime="text/csv",
-)
+    st.dataframe(filtered_wide, use_container_width=True)
+
+    file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
+    export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
+
+    st.download_button(
+        label=f"Download AEMP wide CSV: {export_base}",
+        data=export_csv,
+        file_name=f"{export_base.replace(' ', '_').lower()}_{file_range}_aemp_wide.csv",
+        mime="text/csv",
+    )
+
+with tab_analytics:
+    st.info("Analytics view coming next.")
