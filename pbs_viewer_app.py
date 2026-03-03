@@ -1277,18 +1277,17 @@ with tab_price:
 
         # ---- Full identifiers list with matching colours (scrollable) ----
         with st.expander("Show full identifiers list", expanded=False):
-            id_df = (
-                filtered_df[["series_id", "display_name"]]
-                .drop_duplicates()
-                .sort_values(["display_name"], kind="mergesort")
-                .reset_index(drop=True)
-            )
-
-            if id_df.empty:
+            if filtered_df.empty:
                 st.info("No identifiers to show for the current filters.")
             else:
+                id_df = (
+                    filtered_df[["series_id", "display_name"]]
+                    .drop_duplicates()
+                    .sort_values(["display_name"], kind="mergesort")
+                    .reset_index(drop=True)
+                )
                 id_df["dot"] = "●"
-                id_df["__color__"] = id_df["series_id"].map(color_map).fillna("")
+                id_df["__color__"] = id_df["series_id"].map(color_map)
 
                 def _style_row(row):
                     c = row.get("__color__", "")
@@ -1304,60 +1303,17 @@ with tab_price:
 
                 st.dataframe(styled, use_container_width=True, height=420)
 
-    # ---- Wide table and download (same as before, replaces raw rows table) ----
-    st.markdown("### Item info + AEMP by month (wide)")
-    st.caption("Product columns first, then monthly AEMP columns in chronological order.")
-
-    export_base = selected_drugs[0] if selected_drugs else None
-    if not export_base:
-        st.warning("Pick at least one drug to show the wide table/export.")
-        st.stop()
-
-    export_df = build_export_table(export_base)
-
-    start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
-    end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
-
-    def _col_to_month(col: str) -> pd.Timestamp:
-        return pd.to_datetime(col.replace("AEMP ", ""), format="%b %y", errors="coerce")
-
-    month_cols_all = [c for c in export_df.columns if c.startswith("AEMP ")]
-    kept_month_cols = [
-        c
-        for c in month_cols_all
-        if (_col_to_month(c) >= start_dt) and (_col_to_month(c) <= end_dt)
-    ]
-
-    fixed_cols = [
-        "Item Code",
-        "Legal Instrument Drug",
-        "Legal Instrument Form",
-        "Brand Name",
-        "Formulary",
-        "Responsible Person",
-        "AMT Trade Product Pack",
-    ]
-
-    if kept_month_cols:
-        nonempty_mask = export_df[kept_month_cols].notna().any(axis=1)
-        filtered_wide = export_df.loc[
-            nonempty_mask,
-            [c for c in fixed_cols if c in export_df.columns] + kept_month_cols,
-        ]
-    else:
-        filtered_wide = export_df[[c for c in fixed_cols if c in export_df.columns]].iloc[0:0]
-
-    st.dataframe(filtered_wide, use_container_width=True)
-
-    file_range = f"{start_dt:%Y-%m}_{end_dt:%Y-%m}"
-    export_csv = filtered_wide.to_csv(index=False).encode("utf-8")
-
-    st.download_button(
-        label=f"Download AEMP wide CSV: {export_base}",
-        data=export_csv,
-        file_name=f"{export_base.replace(' ', '_').lower()}_{file_range}_aemp_wide.csv",
-        mime="text/csv",
-    )
+    # ---- Small table under the chart (Month to Identifier to AEMP) ----
+    with st.expander("Show raw rows (Month to Identifier to AEMP)", expanded=False):
+        if filtered_df.empty:
+            st.info("No rows to show in the table for the current filters.")
+        else:
+            st.dataframe(
+                filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
+                    ["Month", "display_name", "aemp"]
+                ],
+                use_container_width=True,
+            )
 
 with tab_export:
     # ---- Wide table and download (respects time range; drops empty rows) ----
