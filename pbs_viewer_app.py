@@ -1303,18 +1303,6 @@ with tab_price:
 
                 st.dataframe(styled, use_container_width=True, height=420)
 
-    # ---- Small table under the chart (Month to Identifier to AEMP) ----
-    with st.expander("Show raw rows (Month to Identifier to AEMP)", expanded=False):
-        if filtered_df.empty:
-            st.info("No rows to show in the table for the current filters.")
-        else:
-            st.dataframe(
-                filtered_df.assign(Month=filtered_df["month"].dt.strftime("%b %Y"))[
-                    ["Month", "display_name", "aemp"]
-                ],
-                use_container_width=True,
-            )
-
 with tab_export:
     # ---- Wide table and download (respects time range; drops empty rows) ----
     st.markdown("### Item info + AEMP by month (wide)")
