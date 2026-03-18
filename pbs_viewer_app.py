@@ -172,7 +172,13 @@ def show_month_to_month_increases(con, selected_drugs):
     fm_resp_sql    = _qualify(fm_resp_expr,    "f")
     resp_sql       = _qualify(resp_expr,       "d")
 
-    # Compare AEMP between the two months (schema-safe join to dim_product_line)
+       # Compare AEMP between the two months (schema-safe join to dim_product_line)
+    if not selected_drugs:
+        st.info("Select at least one Legal Instrument Drug.")
+        return
+
+    drug_placeholders = ",".join(["?"] * len(selected_drugs))
+
     sql = f"""
         SELECT
             {item_code_sql}                                                            AS item_code,
@@ -185,13 +191,15 @@ def show_month_to_month_increases(con, selected_drugs):
         FROM fact_monthly f
         JOIN dim_product_line d USING (product_line_id)
         WHERE f.snapshot_date::DATE IN (?, ?)
+          AND lower(d.name_a) IN ({drug_placeholders})
         GROUP BY 1,2,3,4,5
         HAVING aemp_start IS NOT NULL
            AND aemp_end   IS NOT NULL
            AND aemp_end > aemp_start
         ORDER BY (aemp_end - aemp_start) DESC
     """
-    df = con.execute(sql, [start_month, end_month, start_month, end_month]).df()
+    params = [start_month, end_month, start_month, end_month] + [d.lower() for d in selected_drugs]
+    df = con.execute(sql, params).df()
 
     nice_start = pd.to_datetime(start_month).strftime("%b %Y")
     nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
