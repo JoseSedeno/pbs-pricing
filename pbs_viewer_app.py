@@ -253,7 +253,7 @@ def show_month_to_month_increases(con, selected_drugs):
     )
 
 # ---------------- Month-to-month DECREASES ----------------
-def show_month_to_month_decreases(con):
+def show_month_to_month_decreases(con, selected_drugs):
     # Gate the whole section behind a sidebar toggle
     with st.sidebar:
         show_mom_dec = st.toggle(
@@ -727,24 +727,6 @@ else:
     item_code_expr = form_expr = line_brand_expr = line_formul_expr = resp_expr = "NULL"
     fm_brand_expr = fm_formul_expr = fm_amt_expr = fm_resp_expr = "NULL"
 
-# ---- Drug filter sidebar ----
-with st.sidebar:
-    st.subheader("Filters")
-    all_drugs = get_drugs(dataset, str(DB_PATH), os.path.getmtime(DB_PATH))
-    if not all_drugs:
-        st.error("No drugs found in dim_product_line."); st.stop()
-
-    selected_drugs = st.multiselect(
-        "Legal Instrument Drug(s)",
-        options=all_drugs,
-        default=all_drugs[:1],
-        max_selections=3
-    )
-
-# --- Month-to-month sections (both datasets) ---
-show_month_to_month_increases(con)
-show_month_to_month_decreases(con)
-
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 if dataset == "Chemo EFC":
     meta_sql = f"""
@@ -796,7 +778,7 @@ if dataset == "Chemo EFC":
     """
 else:
     meta_sql = None
-    
+
 @st.cache_data(show_spinner=False)
 def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
     con_local = duckdb.connect(db_path, read_only=True)
@@ -814,6 +796,24 @@ def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
             con_local.close()
         except Exception:
             pass
+
+# ---- Drug filter sidebar ----
+with st.sidebar:
+    st.subheader("Filters")
+    all_drugs = get_drugs(dataset, str(DB_PATH), os.path.getmtime(DB_PATH))
+    if not all_drugs:
+        st.error("No drugs found in dim_product_line."); st.stop()
+
+    selected_drugs = st.multiselect(
+        "Legal Instrument Drug(s)",
+        options=all_drugs,
+        default=all_drugs[:1],
+        max_selections=3
+    )
+
+# ---- Month-to-month sections (both datasets) ----
+show_month_to_month_increases(con, selected_drugs)
+show_month_to_month_decreases(con, selected_drugs)
 
 if dataset == "Chemo EFC":
     @st.cache_data
