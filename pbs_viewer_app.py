@@ -727,10 +727,9 @@ else:
     item_code_expr = form_expr = line_brand_expr = line_formul_expr = resp_expr = "NULL"
     fm_brand_expr = fm_formul_expr = fm_amt_expr = fm_resp_expr = "NULL"
 
-# --- Month-to-month sections (Chemo only) ---
-if dataset == "Chemo EFC":
-    show_month_to_month_increases(con)
-    show_month_to_month_decreases(con)
+# --- Month-to-month sections (both datasets) ---
+show_month_to_month_increases(con)
+show_month_to_month_decreases(con)
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 if dataset == "Chemo EFC":
