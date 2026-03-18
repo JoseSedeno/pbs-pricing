@@ -104,7 +104,7 @@ with st.sidebar:
             st.session_state.pop("auth_ticket", None)
             st.rerun()
 
-def show_month_to_month_increases(con):
+def show_month_to_month_increases(con, selected_drugs):
     # ---- Gate the whole section behind a sidebar toggle ----
     with st.sidebar:
         show_mom = st.toggle("Show month-to-month price increases", value=False, key="mom_show")
