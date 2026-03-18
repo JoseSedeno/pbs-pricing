@@ -1006,21 +1006,6 @@ def build_chart_df(drug: str) -> pd.DataFrame:
     )
     return long_df
 
-# ---- Sidebar ----
-with st.sidebar:
-    st.subheader("Filters")
-    all_drugs = get_drugs(dataset, str(DB_PATH), os.path.getmtime(DB_PATH))
-    if not all_drugs:
-        st.error("No drugs found in dim_product_line."); st.stop()
-
-    # Multi-select up to 3 medicines
-    selected_drugs = st.multiselect(
-        "Legal Instrument Drug(s)",
-        options=all_drugs,
-        default=all_drugs[:1],
-        max_selections=3
-    )
-
 # ---- Series & chart (compare across multiple drugs) ----
 st.write(f"**Database:** `{DB_PATH}`")
 
