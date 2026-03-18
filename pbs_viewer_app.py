@@ -1275,33 +1275,31 @@ with tab_price:
 
         st.altair_chart(chart, use_container_width=True)
 
-        # ---- Full identifiers list with matching colours (scrollable) ----
-        with st.expander("Show full identifiers list", expanded=False):
-            if filtered_df.empty:
-                st.info("No identifiers to show for the current filters.")
-            else:
-                id_df = (
-                    filtered_df[["series_id", "display_name"]]
-                    .drop_duplicates()
-                    .sort_values(["display_name"], kind="mergesort")
-                    .reset_index(drop=True)
-                )
-                id_df["dot"] = "●"
-                id_df["__color__"] = id_df["series_id"].map(color_map)
+      # ---- Full identifiers list with matching colours (scrollable) ----
+    with st.expander("Show full identifiers list", expanded=False):
+        if filtered_df.empty:
+            st.info("No identifiers to show for the current filters.")
+        else:
+            id_df = (
+                filtered_df[["series_id", "display_name"]]
+                .drop_duplicates()
+                .sort_values(["display_name"], kind="mergesort")
+                .reset_index(drop=True)
+            )
+            id_df["dot"] = "●"
+            id_df["__color__"] = id_df["series_id"].map(color_map)
 
-                def _style_row(row):
-                    c = row.get("__color__", "")
-                    if isinstance(c, str) and c:
-                        return [f"color: {c}; font-weight: 700;", "", ""]
-                    return ["", "", ""]
+            display_df = id_df[["dot", "display_name"]].copy()
 
-                styled = (
-                    id_df[["dot", "display_name", "__color__"]]
-                    .style.apply(_style_row, axis=1)
-                    .hide(axis="columns", subset=["__color__"])
-                )
+            def _style_dot_only(row):
+                c = id_df.loc[row.name, "__color__"]
+                if isinstance(c, str) and c:
+                    return [f"color: {c}; font-weight: 700;", ""]
+                return ["", ""]
 
-                st.dataframe(styled, use_container_width=True, height=420)
+            styled = display_df.style.apply(_style_dot_only, axis=1)
+
+            st.dataframe(styled, use_container_width=True, height=420)
 
 with tab_export:
     # ---- Wide table and download (respects time range; drops empty rows) ----
