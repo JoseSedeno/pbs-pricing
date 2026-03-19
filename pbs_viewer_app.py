@@ -934,7 +934,7 @@ def _canon_val(x: object) -> str:
     
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
-def build_chart_df(drug: str) -> pd.DataFrame:
+def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataFrame:
     """
     Build a long dataframe for the chart with columns:
       month, display_name, aemp, Item Code, Responsible Person,
