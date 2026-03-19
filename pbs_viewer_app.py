@@ -861,7 +861,7 @@ else:
 
 # ---- Wide table (unchanged) ----
 @st.cache_data
-def build_export_table(drug: str) -> pd.DataFrame:
+def build_export_table(drug: str, dataset_key: str, data_version: tuple) -> pd.DataFrame:
     # Use the exact wide table produced by the exporter
     df = df_wide_all.copy()
     if df.empty:
