@@ -942,7 +942,7 @@ def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataF
     The three raw columns are passed through from the wide table so we can
     colour/track a stable series across months.
     """
-    base = build_export_table(drug).copy()
+    base = build_export_table(drug, dataset_key, data_version).copy()
     if base.empty:
         cols = ["month","display_name","aemp",
                 "Item Code","Responsible Person","AMT Trade Product Pack","series_id"]
