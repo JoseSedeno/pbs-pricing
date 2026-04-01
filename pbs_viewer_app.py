@@ -549,8 +549,24 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     if dataset == "PBS AEMP":
         try:
             wide = con2.execute('SELECT * FROM wide_fixed').df()
-            row = con2.execute('SELECT built_at FROM wide_fixed_meta').fetchone()
-            built_at = row[0] if row else None
+
+            built_at = None
+            try:
+                meta_cols = {
+                    r[1].lower(): r[1]
+                    for r in con2.execute(
+                        "PRAGMA table_info('wide_fixed_meta')"
+                    ).fetchall()
+                }
+
+                if "built_at" in meta_cols:
+                    row = con2.execute(
+                        f'SELECT "{meta_cols["built_at"]}" FROM wide_fixed_meta LIMIT 1'
+                    ).fetchone()
+                    built_at = row[0] if row else None
+
+            except Exception:
+                built_at = None
 
             # Normalize PBS wide column names so the viewer can find them
             def _pick(colnames, *opts):
