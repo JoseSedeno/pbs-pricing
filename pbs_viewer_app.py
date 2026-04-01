@@ -834,7 +834,6 @@ with st.sidebar:
         "Legal Instrument Drug(s)",
         options=all_drugs,
         default=all_drugs[:1],
-        max_selections=3
     )
 
 # ---- Month-to-month sections (both datasets) ----
