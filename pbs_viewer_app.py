@@ -337,6 +337,15 @@ def show_month_to_month_decreases(con, selected_drugs):
     resp_sql       = _qualify(resp_expr,       "d")
 
     # Decreases only
+
+    drug_filter_sql = ""
+    params = [start_month, end_month, start_month, end_month]
+
+    if selected_drugs:
+        drug_placeholders = ",".join(["?"] * len(selected_drugs))
+        drug_filter_sql = f" AND lower(d.name_a) IN ({drug_placeholders})"
+        params += [d.lower() for d in selected_drugs]
+
     sql = f"""
         SELECT
             {item_code_sql}                                                            AS item_code,
@@ -349,13 +358,14 @@ def show_month_to_month_decreases(con, selected_drugs):
         FROM fact_monthly f
         JOIN dim_product_line d USING (product_line_id)
         WHERE f.snapshot_date::DATE IN (?, ?)
+        {drug_filter_sql}
         GROUP BY 1,2,3,4,5
         HAVING aemp_start IS NOT NULL
            AND aemp_end   IS NOT NULL
            AND aemp_end < aemp_start
         ORDER BY (aemp_start - aemp_end) DESC
     """
-    df = con.execute(sql, [start_month, end_month, start_month, end_month]).df()
+    df = con.execute(sql, params).df()
 
     nice_start = pd.to_datetime(start_month).strftime("%b %Y")
     nice_end   = pd.to_datetime(end_month).strftime("%b %Y")
@@ -366,6 +376,7 @@ def show_month_to_month_decreases(con, selected_drugs):
         return
 
     # Deltas
+    
     df["abs_change"] = (df["aemp_start"] - df["aemp_end"]).round(2)  # positive drop size
     df["pct_change"] = (
         ((df["aemp_end"] - df["aemp_start"]) / df["aemp_start"]) * 100
