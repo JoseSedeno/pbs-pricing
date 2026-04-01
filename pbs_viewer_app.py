@@ -264,6 +264,9 @@ def show_month_to_month_increases(con, selected_drugs):
 
 # ---------------- Month-to-month DECREASES ----------------
 def show_month_to_month_decreases(con, selected_drugs):
+    if dataset != "Chemo EFC":
+        return
+
     # Gate the whole section behind a sidebar toggle
     with st.sidebar:
         show_mom_dec = st.toggle(
