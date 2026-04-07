@@ -859,15 +859,44 @@ def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
 # ---- Drug filter sidebar ----
 with st.sidebar:
     st.subheader("Filters")
-    all_drugs = get_drugs(dataset, str(DB_PATH), os.path.getmtime(DB_PATH))
-    if not all_drugs:
-        st.error("No drugs found in dim_product_line."); st.stop()
 
-    selected_drugs = st.multiselect(
-        "Legal Instrument Drug(s)",
-        options=all_drugs,
-        default=all_drugs[:1],
+    drug_options_df = get_drug_options_with_item_codes(
+        dataset,
+        str(DB_PATH),
+        os.path.getmtime(DB_PATH),
     )
+
+    if drug_options_df.empty:
+        st.error("No drugs found.")
+        st.stop()
+
+    search_text = st.text_input(
+        "Search by drug name or item code",
+        value="",
+        placeholder="e.g. Amifampridine or 13032X",
+    ).strip().lower()
+
+    if search_text:
+        filtered_options_df = drug_options_df[
+            drug_options_df["search_label"].str.lower().str.contains(search_text, na=False)
+        ].copy()
+    else:
+        filtered_options_df = drug_options_df.copy()
+
+    option_map = dict(zip(filtered_options_df["search_label"], filtered_options_df["drug"]))
+    option_labels = filtered_options_df["search_label"].tolist()
+
+    selected_labels = st.multiselect(
+        "Legal Instrument Drug(s)",
+        options=option_labels,
+        default=option_labels[:1] if option_labels else [],
+    )
+
+    selected_drugs = []
+    for lbl in selected_labels:
+        drug = option_map.get(lbl)
+        if drug and drug not in selected_drugs:
+            selected_drugs.append(drug)
 
 # ---- Month-to-month sections (both datasets) ----
 show_month_to_month_increases(con, selected_drugs)
