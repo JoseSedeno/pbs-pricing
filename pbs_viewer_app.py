@@ -856,6 +856,50 @@ def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
         except Exception:
             pass
 
+# ---- Drug search helpers ----
+@st.cache_data(show_spinner=False)
+def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime: float):
+    con_local = duckdb.connect(db_path, read_only=True)
+    try:
+        if active_dataset == "PBS AEMP":
+            df = con_local.execute("""
+                SELECT DISTINCT
+                    "Legal Instrument Drug" AS drug,
+                    "Item Code" AS item_code
+                FROM wide_fixed
+                ORDER BY 1, 2
+            """).df()
+        else:  # Chemo EFC
+            df = con_local.execute("""
+                SELECT DISTINCT
+                    name_a AS drug,
+                    item_code_b AS item_code
+                FROM dim_product_line
+                ORDER BY 1, 2
+            """).df()
+
+        df["drug"] = df["drug"].fillna("").astype(str).str.strip()
+        df["item_code"] = df["item_code"].fillna("").astype(str).str.strip()
+
+        grouped = (
+            df.groupby("drug", dropna=False)["item_code"]
+              .apply(lambda s: sorted([x for x in s if x]))
+              .reset_index()
+        )
+
+        grouped["search_label"] = grouped.apply(
+            lambda r: f"{r['drug']} | " + ", ".join(r["item_code"]) if r["item_code"] else r["drug"],
+            axis=1
+        )
+
+        return grouped
+    finally:
+        try:
+            con_local.close()
+        except Exception:
+            pass
+
+
 # ---- Drug filter sidebar ----
 with st.sidebar:
     st.subheader("Filters")
