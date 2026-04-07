@@ -737,7 +737,7 @@ def pick_col(cols_map, *candidates, default="NULL"):
             return f'"{cols_map[c.lower()]}"'
     return default
 
-# Inspect available columns (ONLY Chemo has these tables)
+# Inspect available columns
 if dataset == "Chemo EFC":
     d_cols  = table_columns("dim_product_line")
     fm_cols = table_columns("fact_monthly")
@@ -755,16 +755,36 @@ if dataset == "Chemo EFC":
         default="NULL"
     )
 
-    fm_brand_expr  = pick_col(fm_cols, "brand_name", default="NULL")
-    fm_formul_expr = pick_col(fm_cols, "formulary", default="NULL")
-    fm_amt_expr = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", "tpp", default="NULL")
-    fm_resp_expr   = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
+    fm_brand_expr   = pick_col(fm_cols, "brand_name", default="NULL")
+    fm_formul_expr  = pick_col(fm_cols, "formulary", default="NULL")
+    fm_amt_expr     = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", "tpp", default="NULL")
+    fm_resp_expr    = pick_col(fm_cols, "responsible_person", "sponsor", "responsible_person_name", "rp_name", default="NULL")
+
 else:
-    # PBS AEMP does NOT use these tables
-    d_cols = {}
-    fm_cols = {}
-    item_code_expr = form_expr = line_brand_expr = line_formul_expr = resp_expr = "NULL"
-    fm_brand_expr = fm_formul_expr = fm_amt_expr = fm_resp_expr = "NULL"
+    # PBS AEMP also uses these tables for month-to-month checks
+    d_cols  = table_columns("dim_product_line")
+    fm_cols = table_columns("fact_monthly")
+
+    item_code_expr   = pick_col(d_cols, "item_code_b", "item_code")
+    form_expr        = pick_col(d_cols, "attr_c", "legal_instrument_form", "form", default="NULL")
+    line_brand_expr  = pick_col(d_cols, "brand_name", "brand", default="NULL")
+    line_formul_expr = pick_col(d_cols, "attr_f", "formulary", default="NULL")
+    resp_expr = pick_col(
+        d_cols,
+        "responsible_person", "responsible_person_name",
+        "sponsor", "sponsor_name", "name_b",
+        default="NULL"
+    )
+
+    fm_brand_expr   = pick_col(fm_cols, "brand_name", default="NULL")
+    fm_formul_expr  = pick_col(fm_cols, "formulary", default="NULL")
+    fm_amt_expr     = pick_col(fm_cols, "amt_trade_product_pack", "amt_trade_pack", "tpp", default="NULL")
+    fm_resp_expr    = pick_col(
+        fm_cols,
+        "responsible_person", "responsible_person_name",
+        "sponsor", "sponsor_name",
+        default="NULL"
+    )
 
 # ---- Metadata (left block) using latest snapshot for Brand/Formulary/AMT ----
 if dataset == "Chemo EFC":
