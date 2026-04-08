@@ -939,10 +939,13 @@ with st.sidebar:
     option_map = dict(zip(filtered_options_df["search_label"], filtered_options_df["drug"]))
     option_labels = filtered_options_df["search_label"].tolist()
 
+    multiselect_key = f"drug_multiselect_{search_text}_{len(option_labels)}"
+
     selected_labels = st.multiselect(
         "Legal Instrument Drug(s)",
         options=option_labels,
-        default=option_labels[:1] if option_labels else [],
+        default=option_labels if search_text else (option_labels[:1] if option_labels else []),
+        key=multiselect_key,
     )
 
     selected_drugs = []
