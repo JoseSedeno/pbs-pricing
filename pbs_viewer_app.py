@@ -870,13 +870,33 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
                 ORDER BY 1, 2
             """).df()
         else:  # Chemo EFC
-            df = con_local.execute("""
-                SELECT DISTINCT
-                    name_a AS drug,
-                    item_code_b AS item_code
-                FROM dim_product_line
-                ORDER BY 1, 2
-            """).df()
+            chemo_cols = {
+                r[1].lower(): r[1]
+                for r in con_local.execute('PRAGMA table_info("dim_product_line")').fetchall()
+            }
+
+            code_col = None
+            for candidate in ["item_code_b", "item_code"]:
+                if candidate in chemo_cols:
+                    code_col = chemo_cols[candidate]
+                    break
+
+            if code_col:
+                df = con_local.execute(f"""
+                    SELECT DISTINCT
+                        name_a AS drug,
+                        "{code_col}" AS item_code
+                    FROM dim_product_line
+                    ORDER BY 1, 2
+                """).df()
+            else:
+                df = con_local.execute("""
+                    SELECT DISTINCT
+                        name_a AS drug,
+                        NULL AS item_code
+                    FROM dim_product_line
+                    ORDER BY 1
+                """).df()
 
         df["drug"] = df["drug"].fillna("").astype(str).str.strip()
         df["item_code"] = df["item_code"].fillna("").astype(str).str.strip()
@@ -900,6 +920,7 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
             pass
 
 # ---- Drug filter sidebar ----
+
 with st.sidebar:
     st.subheader("Filters")
 
