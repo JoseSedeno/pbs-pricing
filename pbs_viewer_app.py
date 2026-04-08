@@ -899,7 +899,6 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
         except Exception:
             pass
 
-
 # ---- Drug filter sidebar ----
 with st.sidebar:
     st.subheader("Filters")
@@ -914,16 +913,26 @@ with st.sidebar:
         st.error("No drugs found.")
         st.stop()
 
-    search_text = st.text_input(
+    raw_search = st.text_input(
         "Search by drug name or item code",
         value="",
-        placeholder="e.g. Amifampridine or 13032X",
-    ).strip().lower()
+        placeholder="e.g. Amifampridine or 13032X, 14825G",
+    )
+
+    search_text = raw_search.strip().lower()
 
     if search_text:
-        filtered_options_df = drug_options_df[
-            drug_options_df["search_label"].str.lower().str.contains(search_text, na=False)
-        ].copy()
+        search_terms = [t.strip().lower() for t in re.split(r"[,;\n]+", raw_search) if t.strip()]
+
+        if len(search_terms) == 1:
+            filtered_options_df = drug_options_df[
+                drug_options_df["search_label"].str.lower().str.contains(search_terms[0], na=False)
+            ].copy()
+        else:
+            mask = drug_options_df["search_label"].str.lower().apply(
+                lambda x: any(term in x for term in search_terms)
+            )
+            filtered_options_df = drug_options_df[mask].copy()
     else:
         filtered_options_df = drug_options_df.copy()
 
