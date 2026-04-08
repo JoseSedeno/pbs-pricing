@@ -922,7 +922,17 @@ with st.sidebar:
     search_text = raw_search.strip().lower()
 
     if search_text:
-        search_terms = [t.strip().lower() for t in re.split(r"[,;\n]+", raw_search) if t.strip()]
+        if re.search(r"[,;\n]", raw_search):
+            search_terms = [t.strip().lower() for t in re.split(r"[,;\n]+", raw_search) if t.strip()]
+        else:
+            space_terms = [t.strip().lower() for t in raw_search.split() if t.strip()]
+
+            if len(space_terms) > 1 and all(
+                re.fullmatch(r"(?=.*[a-z])(?=.*\d)[a-z0-9]+", t) for t in space_terms
+            ):
+                search_terms = space_terms
+            else:
+                search_terms = [search_text]
 
         if len(search_terms) == 1:
             filtered_options_df = drug_options_df[
