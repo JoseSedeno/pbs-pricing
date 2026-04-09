@@ -1110,7 +1110,12 @@ def _canon_val(x: object) -> str:
     
 # ---- Chart data from wide table (Month → Identifier → AEMP) ----
 @st.cache_data
-def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataFrame:
+def build_chart_df(
+    drug: str,
+    dataset_key: str,
+    data_version: tuple,
+    selected_item_codes: tuple = (),
+) -> pd.DataFrame:
     """
     Build a long dataframe for the chart with columns:
       month, display_name, aemp, Item Code, Responsible Person,
@@ -1118,10 +1123,23 @@ def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataF
     The three raw columns are passed through from the wide table so we can
     colour/track a stable series across months.
     """
-    base = build_export_table(drug, dataset_key, data_version).copy()
+    base = build_export_table(
+        drug,
+        dataset_key,
+        data_version,
+        selected_item_codes,
+    ).copy()
+
     if base.empty:
-        cols = ["month","display_name","aemp",
-                "Item Code","Responsible Person","AMT Trade Product Pack","series_id"]
+        cols = [
+            "month",
+            "display_name",
+            "aemp",
+            "Item Code",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+            "series_id",
+        ]
         return pd.DataFrame(columns=cols).head(0)
 
     # --- Build display label and stable series_id ---
@@ -1150,12 +1168,18 @@ def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataF
     )
 
     # Ensure raw key parts exist so schema is stable
-    for c in ["Legal Instrument Drug", "Item Code", "Brand Name", "Legal Instrument Form", "Responsible Person", "AMT Trade Product Pack"]:
+    for c in [
+        "Legal Instrument Drug",
+        "Item Code",
+        "Brand Name",
+        "Legal Instrument Form",
+        "Responsible Person",
+        "AMT Trade Product Pack",
+    ]:
         if c not in base.columns:
             base[c] = pd.NA
 
-    # Stable grouping key (do NOT include Item Code, so code changes do not create a new line)
-    # Keep Legal Instrument Form so tablets vs liquids vs injections never merge
+    # Stable grouping key
     base["series_id"] = (
         base["Legal Instrument Drug"].map(_canon_val) + "|" +
         base["Legal Instrument Form"].map(_canon_val) + "|" +
@@ -1167,7 +1191,7 @@ def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataF
     # Unpivot month columns
     month_cols = [c for c in base.columns if c.startswith("AEMP ")]
     long_df = base.melt(
-        id_vars=["display_name","Item Code","Responsible Person","AMT Trade Product Pack","series_id"],
+        id_vars=["display_name", "Item Code", "Responsible Person", "AMT Trade Product Pack", "series_id"],
         value_vars=month_cols,
         var_name="month_label",
         value_name="aemp",
@@ -1182,10 +1206,10 @@ def build_chart_df(drug: str, dataset_key: str, data_version: tuple) -> pd.DataF
     long_df["aemp"] = pd.to_numeric(long_df["aemp"], errors="coerce")
 
     long_df = (
-        long_df.dropna(subset=["month","aemp"])
+        long_df.dropna(subset=["month", "aemp"])
                .drop(columns=["month_label"])
-               .sort_values(["series_id","display_name","month"])
-               [["month","display_name","aemp","Item Code","Responsible Person","AMT Trade Product Pack","series_id"]]
+               .sort_values(["series_id", "display_name", "month"])
+               [["month", "display_name", "aemp", "Item Code", "Responsible Person", "AMT Trade Product Pack", "series_id"]]
                .reset_index(drop=True)
     )
     return long_df
