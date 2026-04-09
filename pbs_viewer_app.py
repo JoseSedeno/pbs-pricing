@@ -920,7 +920,6 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
             pass
 
 # ---- Drug filter sidebar ----
-
 with st.sidebar:
     st.subheader("Filters")
 
@@ -934,54 +933,53 @@ with st.sidebar:
         st.error("No drugs found.")
         st.stop()
 
-    raw_search = st.text_input(
-        "Search by drug name or item code",
+    raw_item_code_search = st.text_input(
+        "Item code search",
         value="",
-        placeholder="e.g. Amifampridine or 13032X, 14825G",
+        placeholder="e.g. 14797T, 14825G",
     )
 
-    search_text = raw_search.strip().lower()
+    item_code_search = raw_item_code_search.strip().lower()
 
-    if search_text:
-        if re.search(r"[,;\n]", raw_search):
-            search_terms = [t.strip().lower() for t in re.split(r"[,;\n]+", raw_search) if t.strip()]
+    if item_code_search:
+        if re.search(r"[,;\n]", raw_item_code_search):
+            selected_item_codes = [
+                t.strip().lower()
+                for t in re.split(r"[,;\n]+", raw_item_code_search)
+                if t.strip()
+            ]
         else:
-            space_terms = [t.strip().lower() for t in raw_search.split() if t.strip()]
+            space_terms = [t.strip().lower() for t in raw_item_code_search.split() if t.strip()]
 
             if len(space_terms) > 1 and all(
                 re.fullmatch(r"(?=.*[a-z])(?=.*\d)[a-z0-9]+", t) for t in space_terms
             ):
-                search_terms = space_terms
+                selected_item_codes = space_terms
             else:
-                search_terms = [search_text]
+                selected_item_codes = [item_code_search]
 
-        if len(search_terms) == 1:
-            filtered_options_df = drug_options_df[
-                drug_options_df["search_label"].str.lower().str.contains(search_terms[0], na=False)
-            ].copy()
-        else:
-            mask = drug_options_df["search_label"].str.lower().apply(
-                lambda x: any(term in x for term in search_terms)
+        filtered_drug_options_df = drug_options_df[
+            drug_options_df["item_code"].apply(
+                lambda codes: any(code in [str(c).strip().lower() for c in codes] for code in selected_item_codes)
             )
-            filtered_options_df = drug_options_df[mask].copy()
+        ].copy()
     else:
-        filtered_options_df = drug_options_df.copy()
+        selected_item_codes = []
+        filtered_drug_options_df = drug_options_df.copy()
 
-    option_map = dict(zip(filtered_options_df["search_label"], filtered_options_df["drug"]))
-    option_labels = filtered_options_df["search_label"].tolist()
+    drug_option_labels = filtered_drug_options_df["drug"].tolist()
 
-    multiselect_key = f"drug_multiselect_{search_text}_{len(option_labels)}"
+    multiselect_key = f"drug_multiselect_{item_code_search}_{len(drug_option_labels)}"
 
-    selected_labels = st.multiselect(
+    selected_drug_labels = st.multiselect(
         "Legal Instrument Drug(s)",
-        options=option_labels,
-        default=option_labels if search_text else (option_labels[:1] if option_labels else []),
+        options=drug_option_labels,
+        default=drug_option_labels if item_code_search else (drug_option_labels[:1] if drug_option_labels else []),
         key=multiselect_key,
     )
 
     selected_drugs = []
-    for lbl in selected_labels:
-        drug = option_map.get(lbl)
+    for drug in selected_drug_labels:
         if drug and drug not in selected_drugs:
             selected_drugs.append(drug)
 
