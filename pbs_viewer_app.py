@@ -1493,7 +1493,12 @@ with tab_export:
         st.warning("Pick at least one drug to show the wide table/export.")
         st.stop()
 
-    export_df = build_export_table(export_base, dataset, DATA_VERSION)
+    export_df = build_export_table(
+        export_base,
+        dataset,
+        DATA_VERSION,
+        tuple(selected_item_codes),
+    )
 
     start_dt = pd.to_datetime(start_m).to_period("M").to_timestamp()
     end_dt = pd.to_datetime(end_m).to_period("M").to_timestamp()
