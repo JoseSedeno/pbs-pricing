@@ -1023,9 +1023,14 @@ else:
         # PBS AEMP must never touch Chemo tables
         return pd.DataFrame(columns=["month", "aemp"])
 
-# ---- Wide table (unchanged) ----
+# ---- Wide table (updated for optional item code filter) ----
 @st.cache_data
-def build_export_table(drug: str, dataset_key: str, data_version: tuple) -> pd.DataFrame:
+def build_export_table(
+    drug: str,
+    dataset_key: str,
+    data_version: tuple,
+    selected_item_codes: tuple = (),
+) -> pd.DataFrame:
     # Use the exact wide table produced by the exporter
     df = df_wide_all.copy()
     if df.empty:
@@ -1036,6 +1041,13 @@ def build_export_table(drug: str, dataset_key: str, data_version: tuple) -> pd.D
         df = df[df["Legal Instrument Drug"].str.lower() == (drug or "").lower()]
     else:
         return pd.DataFrame()
+
+    # Optional filter by item code
+    if selected_item_codes and "Item Code" in df.columns:
+        selected_item_codes_lower = {str(x).strip().lower() for x in selected_item_codes if str(x).strip()}
+        df = df[
+            df["Item Code"].astype(str).str.strip().str.lower().isin(selected_item_codes_lower)
+        ]
 
     # Month columns in chronological order
     month_cols = sorted(
@@ -1054,7 +1066,7 @@ def build_export_table(drug: str, dataset_key: str, data_version: tuple) -> pd.D
     ]
     fixed = [c for c in fixed if c in df.columns]
     return df[fixed + month_cols].reset_index(drop=True)
-
+    
 # Helper to canonicalise key parts for grouping (series_id)
 def _canon_val(x: object) -> str:
     """
