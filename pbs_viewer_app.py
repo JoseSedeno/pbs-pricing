@@ -1449,6 +1449,38 @@ with tab_price:
         series_range = [PALETTE_60[i % 60] for i in range(len(series_domain))]
         color_map = dict(zip(series_domain, series_range))
 
+        # Build label dataframe:
+        # - first visible point in each series
+        # - point before a price change
+        # - point after a price change
+        label_df = (
+            filtered_df.sort_values(["series_id", "month"])
+            .copy()
+        )
+
+        label_df["prev_aemp"] = label_df.groupby("series_id")["aemp"].shift(1)
+        label_df["next_aemp"] = label_df.groupby("series_id")["aemp"].shift(-1)
+
+        label_df["is_first_point"] = label_df.groupby("series_id").cumcount() == 0
+
+        label_df["is_before_change"] = (
+            label_df["next_aemp"].notna()
+            & (label_df["aemp"] != label_df["next_aemp"])
+        )
+
+        label_df["is_after_change"] = (
+            label_df["prev_aemp"].notna()
+            & (label_df["aemp"] != label_df["prev_aemp"])
+        )
+
+        label_df = label_df[
+            label_df["is_first_point"]
+            | label_df["is_before_change"]
+            | label_df["is_after_change"]
+        ].copy()
+
+        label_df["price_label"] = label_df["aemp"].map(lambda x: f"${x:,.2f}")
+
         # Chart scale control
         scale_mode = st.radio(
             "Y-axis scale",
@@ -1503,7 +1535,7 @@ with tab_price:
         )
 
         st.altair_chart(chart, use_container_width=True)
-
+        
       # ---- Full identifiers list with matching colours (scrollable) ----
     with st.expander("Show full identifiers list", expanded=False):
         if filtered_df.empty:
