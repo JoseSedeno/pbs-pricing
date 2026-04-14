@@ -1291,7 +1291,12 @@ if DEBUG_MODE and dataset == "PBS AEMP":
 # Build one long table across the selected drugs
 frames = []
 for d in (selected_drugs or []):
-    df_d = build_chart_df(d, dataset, DATA_VERSION)
+    df_d = build_chart_df(
+    d,
+    dataset,
+    DATA_VERSION,
+    tuple(selected_item_codes),
+)
     if not df_d.empty:
         df_d = df_d.copy()
 
