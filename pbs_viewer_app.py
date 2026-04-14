@@ -1483,15 +1483,54 @@ with tab_price:
 
         label_df["price_label"] = label_df["aemp"].map(lambda x: f"${x:,.2f}")
 
-        # Label placement:
-        # - after-change labels go below the point
-        # - all others go above the point
-        label_df["label_side"] = "top"
-        label_df.loc[label_df["is_after_change"], "label_side"] = "bottom"
+        # Smart label placement:
+        # - first point: move right and above
+        # - last point: move left and above
+        # - before change: above
+        # - after change: below
+        # - if labels share the same month and are close in price, stagger them
+        label_df["label_dx"] = 0
+        label_df["label_dy"] = -10
+        label_df["label_align"] = "center"
 
-        # Split text labels to reduce overlap
-        label_top_df = label_df[label_df["label_side"] == "top"].copy()
-        label_bottom_df = label_df[label_df["label_side"] == "bottom"].copy()
+        label_df.loc[label_df["is_first_point"], "label_dx"] = 18
+        label_df.loc[label_df["is_first_point"], "label_align"] = "left"
+
+        label_df.loc[label_df["is_last_point"], "label_dx"] = -18
+        label_df.loc[label_df["is_last_point"], "label_align"] = "right"
+
+        label_df.loc[label_df["is_after_change"], "label_dy"] = 12
+
+        label_df["month_key"] = pd.to_datetime(label_df["month"]).dt.to_period("M").astype(str)
+
+        month_price_rank = (
+            label_df.groupby("month_key")["aemp"]
+            .rank(method="first", ascending=True)
+            .astype(int)
+        )
+        label_df["month_price_rank"] = month_price_rank
+
+        near_mask = label_df.duplicated(subset=["month_key"], keep=False)
+
+        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] < 0), "label_dy"] = -22
+        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] < 0), "label_dy"] = -10
+        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] > 0), "label_dy"] = 24
+        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] > 0), "label_dy"] = 12
+
+        label_df["label_dy_top"] = label_df["label_dy"].where(label_df["label_dy"] < 0)
+        label_df["label_dy_bottom"] = label_df["label_dy"].where(label_df["label_dy"] > 0)
+
+        # Split text labels by placement for Altair
+        label_top_df = label_df[label_df["label_dy"] < 0].copy()
+        label_bottom_df = label_df[label_df["label_dy"] > 0].copy()
+
+        label_top_left_df = label_top_df[label_top_df["label_align"] == "left"].copy()
+        label_top_center_df = label_top_df[label_top_df["label_align"] == "center"].copy()
+        label_top_right_df = label_top_df[label_top_df["label_align"] == "right"].copy()
+
+        label_bottom_left_df = label_bottom_df[label_bottom_df["label_align"] == "left"].copy()
+        label_bottom_center_df = label_bottom_df[label_bottom_df["label_align"] == "center"].copy()
+        label_bottom_right_df = label_bottom_df[label_bottom_df["label_align"] == "right"].copy()
 
         # Chart scale control
         scale_mode = st.radio(
@@ -1563,10 +1602,44 @@ with tab_price:
             )
         )
 
-        label_text_top = (
-            alt.Chart(label_top_df)
+        def make_text_layer(df, dy_value, dx_value, align_value):
+            if df.empty:
+                return alt.Chart(pd.DataFrame({"month": [], "aemp": [], "price_label": [], "series_id": []})).mark_text()
+            return (
+                alt.Chart(df)
+                .mark_text(
+                    dy=dy_value,
+                    dx=dx_value,
+                    fontSize=11,
+                    fontWeight="bold",
+                    align=align_value,
+                )
+                .encode(
+                    x=alt.X("month:T", sort=None),
+                    y=y_encoding,
+                    text=alt.Text("price_label:N"),
+                    color=alt.Color(
+                        "series_id:N",
+                        scale=alt.Scale(domain=series_domain, range=series_range),
+                        legend=None,
+                    ),
+                    detail="series_id:N",
+                )
+            )
+
+        label_text_top_left = make_text_layer(label_top_left_df, -10, 18, "left")
+        label_text_top_center = make_text_layer(label_top_center_df, -10, 0, "center")
+        label_text_top_right = make_text_layer(label_top_right_df, -10, -18, "right")
+
+        label_text_bottom_left = make_text_layer(label_bottom_left_df, 12, 18, "left")
+        label_text_bottom_center = make_text_layer(label_bottom_center_df, 12, 0, "center")
+        label_text_bottom_right = make_text_layer(label_bottom_right_df, 12, -18, "right")
+
+        # Extra staggered layers for crowded months
+        extra_top_far = (
+            alt.Chart(label_top_df[label_top_df["label_dy"] == -22])
             .mark_text(
-                dy=-10,
+                dy=-22,
                 fontSize=11,
                 fontWeight="bold",
             )
@@ -1583,10 +1656,10 @@ with tab_price:
             )
         )
 
-        label_text_bottom = (
-            alt.Chart(label_bottom_df)
+        extra_bottom_far = (
+            alt.Chart(label_bottom_df[label_bottom_df["label_dy"] == 24])
             .mark_text(
-                dy=12,
+                dy=24,
                 fontSize=11,
                 fontWeight="bold",
             )
@@ -1604,7 +1677,18 @@ with tab_price:
         )
 
         chart = (
-            (line_layer + label_points + label_text_top + label_text_bottom)
+            (
+                line_layer
+                + label_points
+                + label_text_top_left
+                + label_text_top_center
+                + label_text_top_right
+                + label_text_bottom_left
+                + label_text_bottom_center
+                + label_text_bottom_right
+                + extra_top_far
+                + extra_bottom_far
+            )
             .properties(
                 height=450,
                 title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
