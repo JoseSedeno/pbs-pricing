@@ -1499,9 +1499,12 @@ with tab_price:
             ),
         )
 
-        chart = (
-            alt.Chart(filtered_df.sort_values("month"))
-            .transform_filter(alt.datum.aemp != None)
+        base_chart = alt.Chart(filtered_df.sort_values("month")).transform_filter(
+            alt.datum.aemp != None
+        )
+
+        line_layer = (
+            base_chart
             .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
             .encode(
                 x=alt.X(
@@ -1510,7 +1513,6 @@ with tab_price:
                     axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
                 ),
                 y=y_encoding,
-                # Keep original grouping key, but use our stable colour map and hide the Altair legend
                 color=alt.Color(
                     "series_id:N",
                     scale=alt.Scale(domain=series_domain, range=series_range),
@@ -1527,6 +1529,30 @@ with tab_price:
                     alt.Tooltip("aemp:Q", title="AEMP"),
                 ],
             )
+        )
+
+        label_points = (
+            alt.Chart(label_df)
+            .mark_point(filled=True, size=110)
+            .encode(
+                x=alt.X("month:T", sort=None),
+                y=y_encoding,
+                color=alt.Color(
+                    "series_id:N",
+                    scale=alt.Scale(domain=series_domain, range=series_range),
+                    legend=None,
+                ),
+                detail="series_id:N",
+                tooltip=[
+                    alt.Tooltip("month:T", title="Month", format="%Y-%m"),
+                    alt.Tooltip("display_name:N", title="Identifier (label)"),
+                    alt.Tooltip("price_label:N", title="AEMP"),
+                ],
+            )
+        )
+
+        chart = (
+            (line_layer + label_points)
             .properties(
                 height=450,
                 title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
