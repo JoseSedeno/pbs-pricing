@@ -1449,6 +1449,24 @@ with tab_price:
         series_range = [PALETTE_60[i % 60] for i in range(len(series_domain))]
         color_map = dict(zip(series_domain, series_range))
 
+        # Chart scale control
+        scale_mode = st.radio(
+            "Y-axis scale",
+            options=["Linear", "Log"],
+            index=0,
+            horizontal=True,
+            key="price_chart_scale_mode",
+        )
+
+        y_encoding = alt.Y(
+            "aemp:Q",
+            title="AEMP",
+            scale=alt.Scale(
+                type="log" if scale_mode == "Log" else "linear",
+                zero=False,
+            ),
+        )
+
         chart = (
             alt.Chart(filtered_df.sort_values("month"))
             .transform_filter(alt.datum.aemp != None)
@@ -1459,7 +1477,7 @@ with tab_price:
                     sort=None,
                     axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
                 ),
-                y=alt.Y("aemp:Q", title="AEMP"),
+                y=y_encoding,
                 # Keep original grouping key, but use our stable colour map and hide the Altair legend
                 color=alt.Color(
                     "series_id:N",
