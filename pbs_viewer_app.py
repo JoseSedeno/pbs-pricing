@@ -1505,7 +1505,7 @@ with tab_price:
 
         line_layer = (
             base_chart
-            .mark_line(point={"filled": True, "size": 30}, interpolate="linear", strokeWidth=2.5)
+            .mark_line(interpolate="linear", strokeWidth=2.5)
             .encode(
                 x=alt.X(
                     "month:T",
@@ -1551,8 +1551,28 @@ with tab_price:
             )
         )
 
+        label_text = (
+            alt.Chart(label_df)
+            .mark_text(
+                dy=-10,
+                fontSize=11,
+                fontWeight="bold"
+            )
+            .encode(
+                x=alt.X("month:T", sort=None),
+                y=y_encoding,
+                text=alt.Text("price_label:N"),
+                color=alt.Color(
+                    "series_id:N",
+                    scale=alt.Scale(domain=series_domain, range=series_range),
+                    legend=None,
+                ),
+                detail="series_id:N",
+            )
+        )
+
         chart = (
-            (line_layer + label_points)
+            (line_layer + label_points + label_text)
             .properties(
                 height=450,
                 title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
