@@ -1453,15 +1453,16 @@ with tab_price:
         # - first visible point in each series
         # - point before a price change
         # - point after a price change
-        label_df = (
-            filtered_df.sort_values(["series_id", "month"])
-            .copy()
-        )
+        # - last visible point in each series
+        label_df = filtered_df.sort_values(["series_id", "month"]).copy()
 
         label_df["prev_aemp"] = label_df.groupby("series_id")["aemp"].shift(1)
         label_df["next_aemp"] = label_df.groupby("series_id")["aemp"].shift(-1)
 
         label_df["is_first_point"] = label_df.groupby("series_id").cumcount() == 0
+        label_df["is_last_point"] = (
+            label_df.groupby("series_id").cumcount(ascending=False) == 0
+        )
 
         label_df["is_before_change"] = (
             label_df["next_aemp"].notna()
@@ -1475,11 +1476,22 @@ with tab_price:
 
         label_df = label_df[
             label_df["is_first_point"]
+            | label_df["is_last_point"]
             | label_df["is_before_change"]
             | label_df["is_after_change"]
         ].copy()
 
         label_df["price_label"] = label_df["aemp"].map(lambda x: f"${x:,.2f}")
+
+        # Label placement:
+        # - after-change labels go below the point
+        # - all others go above the point
+        label_df["label_side"] = "top"
+        label_df.loc[label_df["is_after_change"], "label_side"] = "bottom"
+
+        # Split text labels to reduce overlap
+        label_top_df = label_df[label_df["label_side"] == "top"].copy()
+        label_bottom_df = label_df[label_df["label_side"] == "bottom"].copy()
 
         # Chart scale control
         scale_mode = st.radio(
@@ -1551,12 +1563,32 @@ with tab_price:
             )
         )
 
-        label_text = (
-            alt.Chart(label_df)
+        label_text_top = (
+            alt.Chart(label_top_df)
             .mark_text(
                 dy=-10,
                 fontSize=11,
-                fontWeight="bold"
+                fontWeight="bold",
+            )
+            .encode(
+                x=alt.X("month:T", sort=None),
+                y=y_encoding,
+                text=alt.Text("price_label:N"),
+                color=alt.Color(
+                    "series_id:N",
+                    scale=alt.Scale(domain=series_domain, range=series_range),
+                    legend=None,
+                ),
+                detail="series_id:N",
+            )
+        )
+
+        label_text_bottom = (
+            alt.Chart(label_bottom_df)
+            .mark_text(
+                dy=12,
+                fontSize=11,
+                fontWeight="bold",
             )
             .encode(
                 x=alt.X("month:T", sort=None),
@@ -1572,7 +1604,7 @@ with tab_price:
         )
 
         chart = (
-            (line_layer + label_points + label_text)
+            (line_layer + label_points + label_text_top + label_text_bottom)
             .properties(
                 height=450,
                 title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
