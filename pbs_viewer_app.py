@@ -1483,12 +1483,7 @@ with tab_price:
 
         label_df["price_label"] = label_df["aemp"].map(lambda x: f"${x:,.2f}")
 
-        # Smart label placement:
-        # - first point: move right and above
-        # - last point: move left and above
-        # - before change: above
-        # - after change: below
-        # - if labels share the same month and are close in price, stagger them
+        # Smart label placement
         label_df["label_dx"] = 0
         label_df["label_dy"] = -10
         label_df["label_align"] = "center"
@@ -1512,13 +1507,22 @@ with tab_price:
 
         near_mask = label_df.duplicated(subset=["month_key"], keep=False)
 
-        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] < 0), "label_dy"] = -22
-        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] < 0), "label_dy"] = -10
-        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] > 0), "label_dy"] = 24
-        label_df.loc[near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] > 0), "label_dy"] = 12
-
-        label_df["label_dy_top"] = label_df["label_dy"].where(label_df["label_dy"] < 0)
-        label_df["label_dy_bottom"] = label_df["label_dy"].where(label_df["label_dy"] > 0)
+        label_df.loc[
+            near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] < 0),
+            "label_dy"
+        ] = -22
+        label_df.loc[
+            near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] < 0),
+            "label_dy"
+        ] = -10
+        label_df.loc[
+            near_mask & (label_df["month_price_rank"] % 2 == 0) & (label_df["label_dy"] > 0),
+            "label_dy"
+        ] = 24
+        label_df.loc[
+            near_mask & (label_df["month_price_rank"] % 2 == 1) & (label_df["label_dy"] > 0),
+            "label_dy"
+        ] = 12
 
         # Split text labels by placement for Altair
         label_top_df = label_df[label_df["label_dy"] < 0].copy()
@@ -1550,6 +1554,17 @@ with tab_price:
             ),
         )
 
+        # Add one extra empty month to the right for breathing room
+        x_domain_min = filtered_df["month"].min()
+        x_domain_max = filtered_df["month"].max() + pd.DateOffset(months=1)
+
+        x_encoding = alt.X(
+            "month:T",
+            sort=None,
+            axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
+            scale=alt.Scale(domain=[x_domain_min, x_domain_max]),
+        )
+
         base_chart = alt.Chart(filtered_df.sort_values("month")).transform_filter(
             alt.datum.aemp != None
         )
@@ -1558,11 +1573,7 @@ with tab_price:
             base_chart
             .mark_line(interpolate="linear", strokeWidth=2.5)
             .encode(
-                x=alt.X(
-                    "month:T",
-                    sort=None,
-                    axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
-                ),
+                x=x_encoding,
                 y=y_encoding,
                 color=alt.Color(
                     "series_id:N",
@@ -1586,7 +1597,7 @@ with tab_price:
             alt.Chart(label_df)
             .mark_point(filled=True, size=110)
             .encode(
-                x=alt.X("month:T", sort=None),
+                x=x_encoding,
                 y=y_encoding,
                 color=alt.Color(
                     "series_id:N",
@@ -1604,7 +1615,9 @@ with tab_price:
 
         def make_text_layer(df, dy_value, dx_value, align_value):
             if df.empty:
-                return alt.Chart(pd.DataFrame({"month": [], "aemp": [], "price_label": [], "series_id": []})).mark_text()
+                return alt.Chart(
+                    pd.DataFrame({"month": [], "aemp": [], "price_label": [], "series_id": []})
+                ).mark_text()
             return (
                 alt.Chart(df)
                 .mark_text(
@@ -1615,7 +1628,7 @@ with tab_price:
                     align=align_value,
                 )
                 .encode(
-                    x=alt.X("month:T", sort=None),
+                    x=x_encoding,
                     y=y_encoding,
                     text=alt.Text("price_label:N"),
                     color=alt.Color(
@@ -1644,7 +1657,7 @@ with tab_price:
                 fontWeight="bold",
             )
             .encode(
-                x=alt.X("month:T", sort=None),
+                x=x_encoding,
                 y=y_encoding,
                 text=alt.Text("price_label:N"),
                 color=alt.Color(
@@ -1664,7 +1677,7 @@ with tab_price:
                 fontWeight="bold",
             )
             .encode(
-                x=alt.X("month:T", sort=None),
+                x=x_encoding,
                 y=y_encoding,
                 text=alt.Text("price_label:N"),
                 color=alt.Color(
