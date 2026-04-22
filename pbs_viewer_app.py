@@ -1450,10 +1450,10 @@ with tab_price:
         color_map = dict(zip(series_domain, series_range))
 
         # Build label dataframe:
-        # - first visible point in each series
-        # - point before a price change
-        # - point after a price change
-        # - last visible point in each series
+        # first visible point in each series
+        # point before a price change
+        # point after a price change
+        # last visible point in each series
         label_df = filtered_df.sort_values(["series_id", "month"]).copy()
 
         label_df["prev_aemp"] = label_df.groupby("series_id")["aemp"].shift(1)
@@ -1558,13 +1558,24 @@ with tab_price:
         )
 
         # Show one extra empty month on the right
-        x_domain_min = filtered_df["month"].min()
-        x_domain_max = filtered_df["month"].max() + pd.DateOffset(months=1)
+        x_domain_min = pd.to_datetime(filtered_df["month"].min()).normalize()
+        x_last_real = pd.to_datetime(filtered_df["month"].max()).normalize()
+        x_domain_max = x_last_real + pd.DateOffset(months=1)
+
+        # Presentation-friendly axis labels:
+        # always show first visible month, last real month, and extra month
+        axis_values = pd.date_range(start=x_domain_min, end=x_domain_max, freq="6MS").tolist()
+        axis_values = sorted(set(axis_values + [x_domain_min, x_last_real, x_domain_max]))
 
         x_encoding = alt.X(
             "month:T",
             sort=None,
-            axis=alt.Axis(title="Month", format="%b %Y", labelAngle=0),
+            axis=alt.Axis(
+                title="Month",
+                format="%b %Y",
+                labelAngle=0,
+                values=axis_values,
+            ),
             scale=alt.Scale(domain=[x_domain_min, x_domain_max]),
         )
 
