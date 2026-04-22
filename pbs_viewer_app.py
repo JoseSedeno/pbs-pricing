@@ -1481,6 +1481,9 @@ with tab_price:
             | label_df["is_after_change"]
         ].copy()
 
+        # Remove exact duplicate label points
+        label_df = label_df.drop_duplicates(subset=["series_id", "month", "aemp"]).copy()
+
         label_df["price_label"] = label_df["aemp"].map(lambda x: f"${x:,.2f}")
 
         # Smart label placement
@@ -1554,7 +1557,7 @@ with tab_price:
             ),
         )
 
-        # Add one extra empty month to the right for breathing room
+        # Show one extra empty month on the right
         x_domain_min = filtered_df["month"].min()
         x_domain_max = filtered_df["month"].max() + pd.DateOffset(months=1)
 
@@ -1648,7 +1651,6 @@ with tab_price:
         label_text_bottom_center = make_text_layer(label_bottom_center_df, 12, 0, "center")
         label_text_bottom_right = make_text_layer(label_bottom_right_df, 12, -18, "right")
 
-        # Extra staggered layers for crowded months
         extra_top_far = (
             alt.Chart(label_top_df[label_top_df["label_dy"] == -22])
             .mark_text(
