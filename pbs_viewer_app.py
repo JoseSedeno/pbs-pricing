@@ -1500,43 +1500,34 @@ with tab_price:
         label_df.loc[label_df["is_after_change"], "label_dy"] = 12
 
         # Smarter collision handling:
-        # group labels by month + similar price band, then stagger vertically
+        # group labels by month + near-exact price, then stagger vertically
         label_df["month_key"] = pd.to_datetime(label_df["month"]).dt.to_period("M").astype(str)
 
-        # Price band size:
-        # under $100 use $2 bands, $100-$500 use $5 bands, above $500 use $10 bands
         def _price_band(x):
             if pd.isna(x):
                 return x
-            if x < 100:
-                band = 2
-            elif x < 500:
-                band = 5
-            else:
-                band = 10
-            return round(x / band) * band
+            return round(float(x), 1)
 
         label_df["price_band"] = label_df["aemp"].map(_price_band)
 
-        # Rank labels within collision groups
+        # Separate top-label collisions from bottom-label collisions
+        label_df["label_side"] = label_df["label_dy"].apply(lambda x: "bottom" if x > 0 else "top")
+
         label_df["collision_rank"] = (
-            label_df.groupby(["month_key", "price_band"])
+            label_df.groupby(["month_key", "price_band", "label_side"])
             .cumcount()
         )
 
         label_df["collision_size"] = (
-            label_df.groupby(["month_key", "price_band"])["series_id"]
+            label_df.groupby(["month_key", "price_band", "label_side"])["series_id"]
             .transform("size")
         )
 
-        # For crowded groups, stagger labels while keeping all of them
-        # Top labels sequence: -10, -22, -34, -46
-        # Bottom labels sequence: 12, 24, 36, 48
         top_step = 12
         bottom_step = 12
 
-        top_mask = label_df["label_dy"] < 0
-        bottom_mask = label_df["label_dy"] > 0
+        top_mask = label_df["label_side"] == "top"
+        bottom_mask = label_df["label_side"] == "bottom"
         crowded_mask = label_df["collision_size"] > 1
 
         label_df.loc[top_mask & crowded_mask, "label_dy"] = (
@@ -1641,40 +1632,6 @@ with tab_price:
             )
         )
 
-        def make_text_layer(df, align_value):
-            if df.empty:
-                return alt.Chart(
-                    pd.DataFrame({"month": [], "aemp": [], "price_label": [], "series_id": [], "label_dx": [], "label_dy": []})
-                ).mark_text()
-
-            return (
-                alt.Chart(df)
-                .mark_text(
-                    fontSize=11,
-                    fontWeight="bold",
-                    align=align_value,
-                )
-                .encode(
-                    x=x_encoding,
-                    y=y_encoding,
-                    dx=alt.value(0),
-                    dy=alt.value(0),
-                    text=alt.Text("price_label:N"),
-                    color=alt.Color(
-                        "series_id:N",
-                        scale=alt.Scale(domain=series_domain, range=series_range),
-                        legend=None,
-                    ),
-                    detail="series_id:N",
-                )
-                .transform_calculate(
-                    xOffset="datum.label_dx",
-                    yOffset="datum.label_dy"
-                )
-            )
-
-        # Altair mark_text does not accept row-wise dx/dy directly,
-        # so split by alignment and by dy buckets
         def make_bucket_layers(df, align_value):
             layers = []
             if df.empty:
@@ -1712,14 +1669,27 @@ with tab_price:
         text_layers += make_bucket_layers(label_bottom_center_df, "center")
         text_layers += make_bucket_layers(label_bottom_right_df, "right")
 
-        chart = (
-            (line_layer + label_points + sum(text_layers[1:], text_layers[0]) if text_layers else line_layer + label_points)
-            .properties(
-                height=450,
-                title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+        if text_layers:
+            text_layer = text_layers[0]
+            for lyr in text_layers[1:]:
+                text_layer = text_layer + lyr
+            chart = (
+                (line_layer + label_points + text_layer)
+                .properties(
+                    height=450,
+                    title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+                )
+                .interactive(bind_x=True)
             )
-            .interactive(bind_x=True)
-        )
+        else:
+            chart = (
+                (line_layer + label_points)
+                .properties(
+                    height=450,
+                    title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+                )
+                .interactive(bind_x=True)
+            )
 
         st.altair_chart(chart, use_container_width=True)
         
