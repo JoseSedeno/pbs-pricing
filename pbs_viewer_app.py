@@ -1499,9 +1499,7 @@ with tab_price:
         # After change: below
         label_df.loc[label_df["is_after_change"], "label_dy"] = 12
 
-        # Smarter collision handling:
-        # group labels by 2-month bucket + near-exact price + label side,
-        # then stagger vertically while keeping all labels
+        # Smarter collision handling
         month_dt = pd.to_datetime(label_df["month"])
         label_df["month_key"] = month_dt.dt.to_period("M").astype(str)
 
@@ -1513,11 +1511,12 @@ with tab_price:
         label_df["price_band"] = label_df["aemp"].map(_price_band)
         label_df["label_side"] = label_df["label_dy"].apply(lambda x: "bottom" if x > 0 else "top")
 
-        # 2-month bucket so nearby months with same price also separate
+        # 4-month bucket so nearby months with the same price are treated
+        # as one collision group and stacked upward
         label_df["month_bucket"] = (
             month_dt.dt.year.astype(str)
             + "-"
-            + (((month_dt.dt.month - 1) // 2) + 1).astype(str).str.zfill(2)
+            + (((month_dt.dt.month - 1) // 4) + 1).astype(str).str.zfill(2)
         )
 
         label_df["collision_rank"] = (
@@ -1530,19 +1529,18 @@ with tab_price:
             .transform("size")
         )
 
-        top_step = 12
-        bottom_step = 12
-
+        crowded_mask = label_df["collision_size"] > 1
         top_mask = label_df["label_side"] == "top"
         bottom_mask = label_df["label_side"] == "bottom"
-        crowded_mask = label_df["collision_size"] > 1
 
+        # Top labels: move additional labels higher only
         label_df.loc[top_mask & crowded_mask, "label_dy"] = (
-            -10 - (label_df.loc[top_mask & crowded_mask, "collision_rank"] * top_step)
+            -10 - (label_df.loc[top_mask & crowded_mask, "collision_rank"] * 14)
         )
 
+        # Bottom labels: keep separate bottom spacing
         label_df.loc[bottom_mask & crowded_mask, "label_dy"] = (
-            12 + (label_df.loc[bottom_mask & crowded_mask, "collision_rank"] * bottom_step)
+            12 + (label_df.loc[bottom_mask & crowded_mask, "collision_rank"] * 14)
         )
 
         # Split text labels by placement for Altair
