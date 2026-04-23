@@ -1500,8 +1500,10 @@ with tab_price:
         label_df.loc[label_df["is_after_change"], "label_dy"] = 12
 
         # Smarter collision handling:
-        # group labels by month + near-exact price, then stagger vertically
-        label_df["month_key"] = pd.to_datetime(label_df["month"]).dt.to_period("M").astype(str)
+        # group labels by 2-month bucket + near-exact price + label side,
+        # then stagger vertically while keeping all labels
+        month_dt = pd.to_datetime(label_df["month"])
+        label_df["month_key"] = month_dt.dt.to_period("M").astype(str)
 
         def _price_band(x):
             if pd.isna(x):
@@ -1509,17 +1511,22 @@ with tab_price:
             return round(float(x), 1)
 
         label_df["price_band"] = label_df["aemp"].map(_price_band)
-
-        # Separate top-label collisions from bottom-label collisions
         label_df["label_side"] = label_df["label_dy"].apply(lambda x: "bottom" if x > 0 else "top")
 
+        # 2-month bucket so nearby months with same price also separate
+        label_df["month_bucket"] = (
+            month_dt.dt.year.astype(str)
+            + "-"
+            + (((month_dt.dt.month - 1) // 2) + 1).astype(str).str.zfill(2)
+        )
+
         label_df["collision_rank"] = (
-            label_df.groupby(["month_key", "price_band", "label_side"])
+            label_df.groupby(["month_bucket", "price_band", "label_side"])
             .cumcount()
         )
 
         label_df["collision_size"] = (
-            label_df.groupby(["month_key", "price_band", "label_side"])["series_id"]
+            label_df.groupby(["month_bucket", "price_band", "label_side"])["series_id"]
             .transform("size")
         )
 
@@ -1673,6 +1680,7 @@ with tab_price:
             text_layer = text_layers[0]
             for lyr in text_layers[1:]:
                 text_layer = text_layer + lyr
+
             chart = (
                 (line_layer + label_points + text_layer)
                 .properties(
