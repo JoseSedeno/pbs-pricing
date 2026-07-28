@@ -1,0 +1,172 @@
+======================================================================
+items  —  189,737 rows
+======================================================================
+100.0%  li_item_id                          14267X_28823_43512_58623_58625 | 14308C_8638_1147_5269_39781 | 14308C_8638_1147_5269_51573
+100.0%  drug_name                           Patisiran | Atezolizumab | Lansoprazole
+ 98.9%  li_drug_name                        Patisiran | Atezolizumab | Lansoprazole
+ 98.9%  li_form                             Capsule (enteric) 20 mg (as magnesium) | Tablet containing fludrocortisone acetat | Powder for oral inhalation in breath act
+ 98.9%  schedule_form                       atezolizumab 1.875 g/15 mL injection, 15 | selumetinib 25 mg capsule, 60 | fluticasone propionate 250 microgram/act
+ 98.9%  brand_name                          Abrilada | Esomeprazole GxP | Seretide MDI 250/25
+100.0%  program_code                        IP | IF | CA
+100.0%  pbs_code                            14266W | 14302R | 14326B
+100.0%  benefit_type_code                   R | S | U
+100.0%  caution_indicator                   Y | N
+100.0%  note_indicator                      N | Y
+ 98.9%  manner_of_administration            APPLICATION_TO_THE_EYE_EAR | ORAL_TRANSDERMAL | VAGINAL
+ 98.9%  moa_preferred_term                  Rectal | Extracorporeal circulation | Application to the eye/ear
+ 94.1%  maximum_prescribable_pack           12.0 | 0.75 | 200.0
+ 93.9%  maximum_quantity_units              5.0 | 25.0 | 9.0
+ 99.2%  number_of_repeats                   89.0 | 5.0 | 9.0
+ 98.9%  organisation_id                     102.0 | 131.0 | 138.0
+ 98.9%  manufacturer_code                   NV | KY | IQ
+ 98.9%  pack_size                           50.0 | 200.0 | 12.0
+ 98.9%  pricing_quantity                    50.0 | 200.0 | 12.0
+100.0%  pack_not_to_be_broken_ind           N | Y
+ 98.9%  claimed_price                       15.38 | 15.8 | 8.65
+ 98.9%  determined_price                    15.8 | 8.65 | 24.54
+100.0%  determined_qty                      N | Y
+ 98.9%  safety_net_resupply_rule_days       50.0 | 4.0 | 20.0
+100.0%  safety_net_resup_rule_cnt_ind       N | Y
+100.0%  extemporaneous_indicator            N | Y
+  0.9%  extemporaneous_standard             BP 1993 | APF 15 | APF 13
+  0.3%  doctors_bag_group_id                12.0 | 35.0 | 30.0
+100.0%  section100_only_indicator           N | Y
+100.0%  doctors_bag_only_indicator          N | Y
+ 66.4%  brand_substitution_group_id         29008.0 | 28948.0 | 29009.0
+ 66.4%  brand_substitution_group_code       a | b
+100.0%  supply_only_indicator               N | Y
+  0.3%  supply_only_date                    2026-05-01 | 2026-08-01 | 2025-10-01
+  0.6%  non_effective_date                  2025-09-01 | 2026-07-01 | 2026-09-01
+  0.0%  weighted_avg_disclosed_price        EMPTY
+100.0%  originator_brand_indicator          N | Y
+100.0%  paper_med_chart_eligible_ind        N | Y
+100.0%  elect_med_chart_eligible_ind        N | Y
+100.0%  hsptl_med_chart_eligible_ind        N | Y
+ 59.9%  paper_med_chart_duration            4.0
+ 77.3%  elect_med_chart_duration            6.0
+ 99.3%  hsptl_chart_acute_duration          12.0
+ 99.3%  hsptl_chart_sub_acute_duration      12.0
+ 99.3%  hsptl_chart_chronic_duration        12.0
+  5.2%  pack_content                        50.0 | 200.0 | 840.0
+  5.2%  vial_content                        50.0 | 200.0 | 840.0
+100.0%  infusible_indicator                 N | Y
+  5.8%  unit_of_measure                     iu | ml | g
+100.0%  continued_dispensing_flag           N | Y
+100.0%  continued_dispensing_emergency      N | Y
+  5.1%  maximum_amount                      200.0 | 1100.0 | 800.0
+ 96.2%  formulary                           F1 | F2 | CDL
+100.0%  water_added_ind                     N | Y
+  0.2%  section_19a_expiry_date             2024-01-31 | 2023-07-31 | 2023-06-30
+ 91.7%  container_fee_type                  injectable | other
+100.0%  policy_applied_imdq60_base_flag     N | Y
+100.0%  policy_applied_imdq60_flag          N | Y
+100.0%  policy_applied_bio_sim_up_flag      N | Y
+100.0%  policy_applied_indig_phar_flag      N | Y
+100.0%  therapeutic_exemption_indicator     N | Y
+  0.0%  premium_exemption_group_id          1336.0
+  0.1%  doctors_bag_group_title             Pr Exclusive Within Emergency Drug Suppl
+  0.1%  therapeutic_group_id                2.0 | 4.0
+  0.1%  therapeutic_group_title             H2-receptor antagonists | Angiotensin II antagonists, plain
+  0.7%  advanced_notice_date                2026-07-01 | 2025-09-01 | 2025-08-01
+  0.3%  supply_only_end_date                2026-07-01 | 2025-09-01 | 2027-07-01
+ 98.9%  first_listed_date                   2009-07-01 | 2022-07-01 | 2011-02-01
+100.0%  legal_unar_ind                      N | Y
+100.0%  legal_car_ind                       N | Y
+ 98.9%  proportional_price                  15.8 | 8.65 | 24.54
+ 64.7%  li_substitution_group_id            16177.0 | 26927.0 | 24717.0
+100.0%  innovator_indicator                 N | Y
+100.0%  schedule_code                       3834 | 4664 | 3773
+
+======================================================================
+prescribers  —  131,312 rows
+======================================================================
+100.0%  pbs_code                            11974F | 12008B | 12013G
+100.0%  prescriber_code                     W | O | N
+100.0%  prescriber_type                     Midwives | Nurse Practitioners | Optometrists
+100.0%  schedule_code                       3834 | 3773 | 4664
+
+======================================================================
+item_dispensing_rule_relationships  —  494,153 rows
+======================================================================
+100.0%  li_item_id                          9115R_9485_1130_15537_15357 | 9127J_11897_1270_5635_6829 | 9155W_12397_1297_5704_41180
+100.0%  dispensing_rule_mnem                combined | s90-cp | ds-assoc
+100.0%  dispensing_rule_reference           rp-s90-cp | rp-np-s90-cp | rp-np-nc-s90-cp
+100.0%  brand_premium                       9.71 | 4.57 | 5.19
+100.0%  dispense_fee_type_code              EW | EP | RP
+  2.1%  dangerous_drug_fee_code             DD
+100.0%  therapeutic_group_premium           5.14 | 2.66 | 5.32
+ 99.6%  cmnwlth_price_to_pharmacist         3.28 | 13.05 | 17.03
+ 96.7%  man_price_to_pharmacist             3.28 | 13.05 | 17.03
+ 99.6%  man_dispnsd_price_max_qty           13.54 | 252.47 | 244.01
+ 99.6%  max_record_val_for_safety_net       5.78 | 17.61 | 24.38
+ 99.6%  cmnwlth_dsp_price_max_qty           184.64 | 421.32 | 19.23
+100.0%  tgm_price_phrmcst                   5.93 | 14.28 | 6.85
+100.0%  tgm_disp_price_max_qty              42.06 | 37.32 | 27.7
+ 99.6%  special_patient_contribution        1.42 | 1.58 | 0.54
+ 65.4%  fee_dispensing                      9.24 | 8.88
+  0.4%  fee_dispensing_ex                   2.04
+  2.1%  fee_dispensing_dd                   5.73 | 5.5
+  0.4%  fee_water                           1.12
+  0.0%  fee_container_injectable            0.81
+  0.3%  fee_container_other                 0.32
+ 98.8%  fee_safety_net_recording            1.54 | 1.48
+  0.6%  fee_safety_net_recording_ex         1.99 | 1.91
+ 30.2%  fee_extra                           3.45 | 2.79
+  1.8%  fee_chemo_flat_wholesale            31.51 | 30.71
+  2.9%  fee_chemo_prep                      91.23 | 92.56
+  1.9%  fee_diluent                         6.08 | 6.24
+ 99.6%  submitted_pharmacists_pack_price    87.5 | 5.6 | 6.73
+ 99.6%  max_general_patient_charge          5.78 | 17.61 | 24.71
+ 99.6%  mn_price_dispenser                  3.28 | 13.05 | 17.03
+ 88.8%  mn_price_wholesale_markup_limit     10000.01 | 5.51 | 1000.01
+ 99.6%  mn_price_wholesale_markup_code      W | A
+ 99.6%  mn_price_wholesale_markup           2.59 | 1.86 | 0.35
+ 99.6%  mn_pharmacy_price                   400.53 | 1082.36 | 11.85
+ 65.2%  mn_pharmacy_markup_limit            1000.01 | 2000.01 | 100.0
+ 99.6%  mn_pharmacy_markup_code             E | A | C
+ 99.6%  mn_pharmacy_markup                  0.37 | 0.19 | 0.35
+100.0%  schedule_code                       3834 | 4581 | 4558
+
+======================================================================
+organisations  —  2,369 rows
+======================================================================
+100.0%  organisation_id                     109 | 110 | 135
+100.0%  name                                Clinect Pty Ltd | Alcon Laboratories (Australia) Pty Ltd | Abbott Australasia Pty Ltd
+ 95.6%  abn                                 88 000 222 408 | 17 144 062 386 | 41 169 715 664
+ 98.9%  street_address                      27-28/11-21 Underwood Road | 99 Phillip Street | Unit 1/108 Old Pittwater Road
+ 98.9%  city                                WEST RYDE | CLAYTON SOUTH | Parramatta
+ 98.9%  state                               WA | QLD | SA
+ 98.9%  postcode                            1670 | 2065 | 3121
+ 97.6%  telephone_number                    +61 (0)2 8422 0800 | +61 (0)3 7067 8510 | +61 (0)3 9114 2222
+  0.0%  facsimile_number                    EMPTY
+100.0%  schedule_code                       3834 | 3773 | 4664
+
+======================================================================
+programs  —  221 rows
+======================================================================
+100.0%  program_code                        CA | DB | IF
+100.0%  program_title                       General Schedule | Extemporaneous Preparations | Section 100 (Highly Specialised Drugs) -
+100.0%  schedule_code                       3834 | 3773 | 4664
+
+======================================================================
+dispensing_rules  —  221 rows
+======================================================================
+100.0%  dispensing_rule_mnem                combined | s94-private-sa | ds-assoc
+100.0%  dispensing_rule_reference           rp-np-s90-cp | rp-s90-cp | in-s90-cp
+100.0%  dispensing_rule_title               Public Hospital S100 | Community Pharmacy | Extemporaneous
+100.0%  community_pharmacy_indicator        true | false
+100.0%  schedule_code                       3834 | 3773 | 4664
+
+======================================================================
+amt_items  —  765,240 rows
+======================================================================
+100.0%  pbs_concept_id                      39781 | 51573 | 57327
+100.0%  concept_type_code                   MPP | TPP | TPUU
+ 96.7%  amt_code                            23640011000036109 | 1534621000168107 | 25673006
+100.0%  li_item_id                          14706B_9709_15600_2813_9454 | 14725B_29474_59791_59807_59811 | 1472L_7005_799_3821_11754
+ 96.7%  preferred_term                      Esomeprazole (Apo) 20 mg enteric tablet, | Selpercatinib | Selpercatinib 40 mg capsule, 56
+100.0%  exempt_ind                          N | Y
+  2.9%  non_amt_code                        673171000144102 | 673371000144104 | 674901000144105
+100.0%  pbs_preferred_term                  Vancomycin | Vancomycin (Juno) 500 mg powder for inje | Omeprazole
+100.0%  schedule_code                       3834 | 3773 | 4664
+
