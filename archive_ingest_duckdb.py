@@ -59,37 +59,52 @@ DB_FILENAME = "pbs_api.duckdb"
 
 
 def download_zip(date_str: str, raw_dir: Path) -> Path | None:
-    """Fetch one month's ZIP. Returns the path, or None if not published."""
+    """Fetch one month's ZIP. Returns the path, or None if not published.
+
+    The archive names this file two different ways depending on when it
+    was uploaded: "{date}-PBS-API-CSV.zip" for some months, and
+    "{date}-PBS-API-CSV-files.zip" for others. Try both.
+    """
     year, month, _ = date_str.split("-")
-    url = URL_TEMPLATE.format(year=year, month=month, date=date_str)
     dest = raw_dir / f"{date_str}-PBS-API-CSV.zip"
 
     if dest.exists() and dest.stat().st_size > 100_000:
         print(f"   already downloaded: {dest.name}")
         return dest
 
-    print(f"   downloading {url}")
-    try:
-        resp = requests.get(url, timeout=180)
-    except requests.RequestException as e:
-        print(f"   network error: {e}")
-        return None
+    candidates = [
+        f"{date_str}-PBS-API-CSV.zip",
+        f"{date_str}-PBS-API-CSV-files.zip",
+    ]
 
-    if resp.status_code == 404:
-        print("   not published yet (404)")
-        return None
-    if resp.status_code != 200:
-        print(f"   unexpected status {resp.status_code}")
-        return None
+    for filename in candidates:
+        url = (
+            "https://www.pbs.gov.au/publication/schedule/"
+            f"{year}/{month}/{filename}?variant=3"
+        )
+        print(f"   trying {url}")
+        try:
+            resp = requests.get(url, timeout=180)
+        except requests.RequestException as e:
+            print(f"   network error: {e}")
+            continue
 
-    # A missing file sometimes returns an HTML error page with status 200.
-    if not resp.content.startswith(b"PK"):
-        print("   response is not a ZIP, skipping")
-        return None
+        if resp.status_code == 404:
+            continue
+        if resp.status_code != 200:
+            print(f"   unexpected status {resp.status_code}")
+            continue
+        # A missing file sometimes returns an HTML error page with status 200.
+        if not resp.content.startswith(b"PK"):
+            print("   response is not a ZIP, skipping")
+            continue
 
-    dest.write_bytes(resp.content)
-    print(f"   saved {len(resp.content):,} bytes")
-    return dest
+        dest.write_bytes(resp.content)
+        print(f"   saved {len(resp.content):,} bytes")
+        return dest
+
+    print("   not published yet (404)")
+    return None
 
 
 def extract_zip(zip_path: Path, raw_dir: Path) -> Path | None:
