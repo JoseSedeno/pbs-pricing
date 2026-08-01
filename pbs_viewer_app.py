@@ -878,7 +878,16 @@ def get_drugs(active_dataset: str, db_path: str, db_mtime: float):
 def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime: float):
     con_local = duckdb.connect(db_path, read_only=True)
     try:
-        if active_dataset == "PBS AEMP":
+        if active_dataset == "PBS API":
+            df = con_local.execute("""
+                SELECT DISTINCT
+                    li_drug_name AS drug,
+                    pbs_code AS item_code
+                FROM items
+                WHERE li_drug_name IS NOT NULL
+                ORDER BY 1, 2
+            """).df()
+        elif active_dataset == "PBS AEMP":
             df = con_local.execute("""
                 SELECT DISTINCT
                     "Legal Instrument Drug" AS drug,
@@ -891,13 +900,11 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
                 r[1].lower(): r[1]
                 for r in con_local.execute('PRAGMA table_info("dim_product_line")').fetchall()
             }
-
             code_col = None
             for candidate in ["item_code_b", "item_code"]:
                 if candidate in chemo_cols:
                     code_col = chemo_cols[candidate]
                     break
-
             if code_col:
                 df = con_local.execute(f"""
                     SELECT DISTINCT
@@ -914,21 +921,17 @@ def get_drug_options_with_item_codes(active_dataset: str, db_path: str, db_mtime
                     FROM dim_product_line
                     ORDER BY 1
                 """).df()
-
         df["drug"] = df["drug"].fillna("").astype(str).str.strip()
         df["item_code"] = df["item_code"].fillna("").astype(str).str.strip()
-
         grouped = (
             df.groupby("drug", dropna=False)["item_code"]
               .apply(lambda s: sorted([x for x in s if x]))
               .reset_index()
         )
-
         grouped["search_label"] = grouped.apply(
             lambda r: f"{r['drug']} | " + ", ".join(r["item_code"]) if r["item_code"] else r["drug"],
             axis=1
         )
-
         return grouped
     finally:
         try:
