@@ -228,3 +228,5 @@ out/*.parquet
 
 .streamlit/secrets.toml
 
+raw_api/
+out_api/
