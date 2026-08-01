@@ -13,14 +13,14 @@ st.title("PBS AEMP Price Viewer")
 
 # ---- Dataset selector ----
 with st.sidebar:
-    dataset = st.radio("Dataset", ["PBS AEMP", "Chemo EFC"], index=0)
+    dataset = st.radio("Dataset", ["PBS AEMP", "Chemo EFC", "PBS API"], index=0)
     
 # Map label -> (local filename, Streamlit secrets key)
 DATASET_MAP = {
     "PBS AEMP": ("pbs_prices.duckdb", "DB_FILE_ID"),
     "Chemo EFC": ("chemo_prices.duckdb", "CHEMO_DB_FILE_ID"),
+    "PBS API": ("pbs_api.duckdb", "API_DB_FILE_ID"),
 }
-
 # ---- Simple auth gate (must be above any data code) ----
 from datetime import datetime, timezone
 
@@ -449,7 +449,12 @@ def ensure_db(dataset: str) -> Path:
             st.warning(f"{env_var} set but file missing/small: {p}")
 
     # 2) Local DB path (dataset-aware)
-    out_dir = Path("out_chemo") if dataset == "Chemo EFC" else Path("out")
+    if dataset == "Chemo EFC":
+        out_dir = Path("out_chemo")
+    elif dataset == "PBS API":
+        out_dir = Path("out_api")
+    else:
+        out_dir = Path("out")
     out_dir.mkdir(parents=True, exist_ok=True)
     db_path = (out_dir / filename).resolve()
 
@@ -501,7 +506,19 @@ def ensure_db(dataset: str) -> Path:
     try:
         con_check = duckdb.connect(str(db_path), read_only=True)
 
-        if dataset == "Chemo EFC":
+        if dataset == "PBS API":
+            have_a = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='items'
+            """).fetchone()
+            have_b = con_check.execute("""
+                SELECT 1
+                FROM information_schema.tables
+                WHERE table_schema='main' AND table_name='summary_of_changes'
+            """).fetchone()
+            need_msg = "items / summary_of_changes"
+        elif dataset == "Chemo EFC":
             have_a = con_check.execute("""
                 SELECT 1
                 FROM information_schema.tables
