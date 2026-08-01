@@ -578,10 +578,13 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     mtime = os.path.getmtime(db_path)
     con2 = duckdb.connect(str(db_path), read_only=True)
 
+    if dataset == "PBS API":
+        con2.close()
+        return pd.DataFrame(), None, mtime
+
     if dataset == "PBS AEMP":
         try:
             wide = con2.execute('SELECT * FROM wide_fixed').df()
-
             built_at = None
             try:
                 meta_cols = {
@@ -590,16 +593,13 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                         "PRAGMA table_info('wide_fixed_meta')"
                     ).fetchall()
                 }
-
                 if "built_at" in meta_cols:
                     row = con2.execute(
                         f'SELECT "{meta_cols["built_at"]}" FROM wide_fixed_meta LIMIT 1'
                     ).fetchone()
                     built_at = row[0] if row else None
-
             except Exception:
                 built_at = None
-
             # Normalize PBS wide column names so the viewer can find them
             def _pick(colnames, *opts):
                 low = {c.strip().lower(): c for c in colnames}
