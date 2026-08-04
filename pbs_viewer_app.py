@@ -579,8 +579,115 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     con2 = duckdb.connect(str(db_path), read_only=True)
 
     if dataset == "PBS API":
-        con2.close()
-        return pd.DataFrame(), None, mtime
+        try:
+            # Responsible Person lives in organisations; join only if that
+            # table and the columns we need are actually present.
+            def _cols_api(tbl):
+                try:
+                    return {
+                        r[1].lower(): r[1]
+                        for r in con2.execute(f'PRAGMA table_info("{tbl}")').fetchall()
+                    }
+                except Exception:
+                    return {}
+
+            org_cols = _cols_api("organisations")
+            org_id_col = next(
+                (org_cols[c] for c in ("organisation_id", "id") if c in org_cols), None
+            )
+            org_name_col = next(
+                (org_cols[c] for c in ("organisation_name", "name", "responsible_person")
+                 if c in org_cols),
+                None,
+            )
+
+            if org_id_col and org_name_col:
+                rp_select = f'o."{org_name_col}"'
+                rp_join = (
+                    "LEFT JOIN organisations o "
+                    f'ON o."{org_id_col}" = i.organisation_id '
+                    "AND o._effective_date = i._effective_date"
+                )
+            else:
+                rp_select = "CAST(NULL AS VARCHAR)"
+                rp_join = ""
+
+            long_df = con2.execute(f"""
+                SELECT
+                    i.li_item_id                          AS li_item_id,
+                    i.pbs_code                            AS "Item Code",
+                    i.li_drug_name                        AS "Legal Instrument Drug",
+                    i.li_form                             AS "Legal Instrument Form",
+                    i.brand_name                          AS "Brand Name",
+                    i.formulary                           AS _formulary_src,
+                    i.schedule_form                       AS "AMT Trade Product Pack",
+                    {rp_select}                           AS "Responsible Person",
+                    CAST(i.determined_price AS DOUBLE)    AS aemp,
+                    CAST(i._effective_date AS DATE)       AS eff_date
+                FROM items i
+                {rp_join}
+                WHERE i.determined_price IS NOT NULL
+            """).df()
+        finally:
+            try:
+                con2.close()
+            except Exception:
+                pass
+
+        if long_df.empty:
+            return pd.DataFrame(), None, mtime
+
+        def _norm_formulary_api(x):
+            if x is None:
+                return None
+            s = str(x).strip()
+            if s in ("1", "F1"):
+                return "F1"
+            if s in ("60", "F2"):
+                return "F2"
+            if s.upper() == "CDL":
+                return "CDL"
+            return s or None
+
+        long_df["Formulary"] = long_df["_formulary_src"].map(_norm_formulary_api)
+        long_df.drop(columns=["_formulary_src"], inplace=True)
+
+        # A month can hold more than one schedule (e.g. 2025-12-01 and
+        # 2025-12-10). The later schedule supersedes, so keep only that one.
+        long_df["eff_date"] = pd.to_datetime(long_df["eff_date"], errors="coerce")
+        long_df = long_df.dropna(subset=["eff_date"])
+        long_df["month"] = long_df["eff_date"].dt.to_period("M")
+        long_df = (
+            long_df.sort_values("eff_date")
+                   .drop_duplicates(subset=["li_item_id", "month"], keep="last")
+        )
+        long_df["month_label"] = long_df["eff_date"].dt.strftime("AEMP %b %y")
+
+        id_cols = [
+            "Item Code",
+            "Legal Instrument Drug",
+            "Legal Instrument Form",
+            "Brand Name",
+            "Formulary",
+            "Responsible Person",
+            "AMT Trade Product Pack",
+        ]
+        for c in id_cols:
+            if c not in long_df.columns:
+                long_df[c] = pd.NA
+            long_df[c] = long_df[c].astype("string").fillna("")
+
+        wide = (
+            long_df
+            .pivot_table(index=id_cols, columns="month_label", values="aemp", aggfunc="mean")
+            .reset_index()
+        )
+        mcols = sorted(
+            [c for c in wide.columns if c.startswith("AEMP ")],
+            key=lambda c: pd.to_datetime(c.replace("AEMP ", ""), format="%b %y", errors="coerce"),
+        )
+        wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
+        return wide, None, mtime
 
     if dataset == "PBS AEMP":
         try:
