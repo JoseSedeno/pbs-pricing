@@ -1902,8 +1902,6 @@ with tab_price:
 
         if not marker_df.empty:
             st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
-            
-        st.altair_chart(chart, use_container_width=True)
         
       # ---- Full identifiers list with matching colours (scrollable) ----
     with st.expander("Show full identifiers list", expanded=False):
