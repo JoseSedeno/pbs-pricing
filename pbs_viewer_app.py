@@ -267,6 +267,8 @@ def show_month_to_month_increases(con, selected_drugs):
 
 # ---------------- Month-to-month DECREASES ----------------
 def show_month_to_month_decreases(con, selected_drugs):
+    if dataset == "PBS API":
+        return
 
     # Gate the whole section behind a sidebar toggle
     with st.sidebar:
