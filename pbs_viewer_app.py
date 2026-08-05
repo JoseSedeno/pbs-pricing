@@ -1841,17 +1841,9 @@ with tab_price:
 
         marker_df = pd.DataFrame()
         if not events_df.empty and not filtered_df.empty:
-            visible = set(
-                zip(
-                    filtered_df["Item Code"].astype(str).str.strip(),
-                    filtered_df["Brand Name"].astype(str).str.strip(),
-                )
-            )
+            visible_codes = set(filtered_df["Item Code"].astype(str).str.strip())
             ev_view = events_df[
-                events_df.apply(
-                    lambda r: (str(r["pbs_code"]).strip(), str(r["brand_name"]).strip()) in visible,
-                    axis=1,
-                )
+                events_df["pbs_code"].astype(str).str.strip().isin(visible_codes)
             ].copy()
             ev_view = ev_view[
                 (ev_view["event_month"] >= pd.to_datetime(start_m))
