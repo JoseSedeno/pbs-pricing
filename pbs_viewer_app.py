@@ -1805,29 +1805,112 @@ with tab_price:
         text_layers += make_bucket_layers(label_bottom_center_df, "center")
         text_layers += make_bucket_layers(label_bottom_right_df, "right")
 
+        # ---- Pricing event markers (PBS API only) ----
+        @st.cache_data(show_spinner=False)
+        def load_price_events(db_path: str, active_dataset: str, _ver: tuple):
+            """Read price_events. Empty frame if absent or not the API dataset."""
+            if active_dataset != "PBS API":
+                return pd.DataFrame()
+            con3 = duckdb.connect(str(db_path), read_only=True)
+            try:
+                exists = con3.execute("""
+                    SELECT 1 FROM information_schema.tables
+                    WHERE table_schema='main' AND table_name='price_events'
+                """).fetchone()
+                if not exists:
+                    return pd.DataFrame()
+                ev = con3.execute("""
+                    SELECT pbs_code, li_drug_name, brand_name, event_date,
+                           event_label, percentage_applied, price_before, price_after
+                    FROM price_events
+                """).df()
+            except Exception:
+                return pd.DataFrame()
+            finally:
+                try:
+                    con3.close()
+                except Exception:
+                    pass
+            ev["event_month"] = (
+                pd.to_datetime(ev["event_date"], errors="coerce")
+                  .dt.to_period("M").dt.to_timestamp()
+            )
+            return ev.dropna(subset=["event_month"])
+
+        events_df = load_price_events(str(DB_PATH), dataset, DATA_VERSION)
+
+        marker_df = pd.DataFrame()
+        if not events_df.empty and not filtered_df.empty:
+            visible = set(
+                zip(
+                    filtered_df["Item Code"].astype(str).str.strip(),
+                    filtered_df["Brand Name"].astype(str).str.strip(),
+                )
+            )
+            ev_view = events_df[
+                events_df.apply(
+                    lambda r: (str(r["pbs_code"]).strip(), str(r["brand_name"]).strip()) in visible,
+                    axis=1,
+                )
+            ].copy()
+            ev_view = ev_view[
+                (ev_view["event_month"] >= pd.to_datetime(start_m))
+                & (ev_view["event_month"] <= pd.to_datetime(end_m))
+            ]
+            if not ev_view.empty:
+                marker_df = (
+                    ev_view.rename(columns={"event_month": "month"})
+                           .groupby("month")
+                           .agg(
+                               event_count=("event_label", "size"),
+                               event_labels=(
+                                   "event_label",
+                                   lambda s: ", ".join(sorted(set(s.astype(str)))),
+                               ),
+                           )
+                           .reset_index()
+                )
+
+        rule_layer = None
+        if not marker_df.empty:
+            rule_layer = (
+                alt.Chart(marker_df)
+                .mark_rule(strokeDash=[4, 3], strokeWidth=1.5, color="#BA7517", opacity=0.85)
+                .encode(
+                    x=x_encoding,
+                    tooltip=[
+                        alt.Tooltip("month:T", title="Month", format="%b %Y"),
+                        alt.Tooltip("event_labels:N", title="Event"),
+                        alt.Tooltip("event_count:Q", title="Items affected"),
+                    ],
+                )
+            )
+
         if text_layers:
             text_layer = text_layers[0]
             for lyr in text_layers[1:]:
                 text_layer = text_layer + lyr
-
-            chart = (
-                (line_layer + label_points + text_layer)
-                .properties(
-                    height=450,
-                    title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
-                )
-                .interactive(bind_x=True)
-            )
+            layered = line_layer + label_points + text_layer
         else:
-            chart = (
-                (line_layer + label_points)
-                .properties(
-                    height=450,
-                    title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
-                )
-                .interactive(bind_x=True)
-            )
+            layered = line_layer + label_points
 
+        if rule_layer is not None:
+            layered = rule_layer + layered
+
+        chart = (
+            layered
+            .properties(
+                height=450,
+                title=alt.TitleParams(f"{title_drug}: AEMP by month", anchor="start"),
+            )
+            .interactive(bind_x=True)
+        )
+
+        st.altair_chart(chart, use_container_width=True)
+
+        if not marker_df.empty:
+            st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
+            
         st.altair_chart(chart, use_container_width=True)
         
       # ---- Full identifiers list with matching colours (scrollable) ----
