@@ -581,7 +581,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
     import os
     mtime = os.path.getmtime(db_path)
     con2 = duckdb.connect(str(db_path), read_only=True)
-
     if dataset == "PBS API":
         try:
             # Responsible Person lives in organisations; join only if that
@@ -594,7 +593,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                     }
                 except Exception:
                     return {}
-
             org_cols = _cols_api("organisations")
             org_id_col = next(
                 (org_cols[c] for c in ("organisation_id", "id") if c in org_cols), None
@@ -604,7 +602,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                  if c in org_cols),
                 None,
             )
-
             if org_id_col and org_name_col:
                 rp_select = f'o."{org_name_col}"'
                 rp_join = (
@@ -615,7 +612,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             else:
                 rp_select = "CAST(NULL AS VARCHAR)"
                 rp_join = ""
-
             long_df = con2.execute(f"""
                 SELECT
                     i.li_item_id                          AS li_item_id,
@@ -626,6 +622,7 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                     i.formulary                           AS _formulary_src,
                     i.schedule_form                       AS "AMT Trade Product Pack",
                     {rp_select}                           AS "Responsible Person",
+                    i.first_listed_date                   AS first_listed_date,
                     CAST(i.determined_price AS DOUBLE)    AS aemp,
                     CAST(i._effective_date AS DATE)       AS eff_date
                 FROM items i
@@ -637,10 +634,8 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                 con2.close()
             except Exception:
                 pass
-
         if long_df.empty:
             return pd.DataFrame(), None, mtime
-
         def _norm_formulary_api(x):
             if x is None:
                 return None
@@ -652,7 +647,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             if s.upper() == "CDL":
                 return "CDL"
             return s or None
-
         long_df["Formulary"] = long_df["_formulary_src"].map(_norm_formulary_api)
         long_df.drop(columns=["_formulary_src"], inplace=True)
 
