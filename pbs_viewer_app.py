@@ -1249,9 +1249,9 @@ def build_chart_df(
 ) -> pd.DataFrame:
     """
     Build a long dataframe for the chart with columns:
-      month, display_name, aemp, Item Code, Responsible Person,
-      AMT Trade Product Pack, series_id
-    The three raw columns are passed through from the wide table so we can
+      month, display_name, aemp, Item Code, Legal Instrument Form,
+      Responsible Person, AMT Trade Product Pack, series_id
+    The raw columns are passed through from the wide table so we can
     colour/track a stable series across months.
     """
     base = build_export_table(
@@ -1260,13 +1260,13 @@ def build_chart_df(
         data_version,
         selected_item_codes,
     ).copy()
-
     if base.empty:
         cols = [
             "month",
             "display_name",
             "aemp",
             "Item Code",
+            "Legal Instrument Form",
             "Responsible Person",
             "AMT Trade Product Pack",
             "series_id",
