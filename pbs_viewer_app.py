@@ -1933,7 +1933,6 @@ with tab_price:
         # ---- One summary card per drug + form ----
         def _money(x):
             return f"${x:,.2f}"
-
         summary_cards = []
         if dataset == "PBS API" and "Legal Instrument Form" in filtered_df.columns:
             for _drug in (selected_drugs or []):
@@ -1944,33 +1943,27 @@ with tab_price:
                     sub = sub_drug[sub_drug["Legal Instrument Form"].astype(str) == _form]
                     if sub.empty:
                         continue
-
                     first_m, last_m = sub["month"].min(), sub["month"].max()
                     per_series = sub.sort_values("month").groupby("series_id")["aemp"]
                     firsts, lasts = per_series.first(), per_series.last()
                     uniq_first = sorted(set(firsts.round(2)))
                     uniq_last = sorted(set(lasts.round(2)))
-
                     if len(uniq_last) == 1:
                         latest_txt = _money(uniq_last[0])
                     else:
                         latest_txt = f"{_money(uniq_last[0])} – {_money(uniq_last[-1])}"
-
                     if len(uniq_first) == 1 and len(uniq_last) == 1 and uniq_first[0]:
                         _pct = (uniq_last[0] - uniq_first[0]) / uniq_first[0] * 100
                         change_txt = f"{_pct:+.2f}% from {_money(uniq_first[0])}"
                     else:
                         change_txt = f"varies across {len(firsts)} products"
-
                     codes = set(sub["Item Code"].astype(str).str.strip())
-
-                    if not marker_df.empty:
+                    if not marker_df.empty and not ev_view.empty:
                         ev_d = ev_view[
                             ev_view["pbs_code"].astype(str).str.strip().isin(codes)
                         ]
                     else:
                         ev_d = pd.DataFrame()
-
                     if ev_d.empty:
                         last_event_txt = "none in view"
                     else:
@@ -1979,7 +1972,6 @@ with tab_price:
                             set(ev_d.loc[ev_d["event_month"] == _lm, "event_label"].astype(str))
                         )
                         last_event_txt = f"{_lm:%b %Y} · {', '.join(_labels)}"
-
                     n_exempt = len(codes & exempt_codes)
                     if n_exempt == 0:
                         exempt_txt = "Not exempt"
@@ -1987,7 +1979,6 @@ with tab_price:
                         exempt_txt = "Exempt (s84AH)"
                     else:
                         exempt_txt = f"{n_exempt} of {len(codes)} item codes exempt"
-
                     summary_cards.append(
                         {
                             "drug": _drug,
