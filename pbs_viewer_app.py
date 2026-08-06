@@ -1322,12 +1322,12 @@ def build_chart_df(
     # Unpivot month columns
     month_cols = [c for c in base.columns if c.startswith("AEMP ")]
     long_df = base.melt(
-        id_vars=["display_name", "Item Code", "Responsible Person", "AMT Trade Product Pack", "series_id"],
+        id_vars=["display_name", "Item Code", "Legal Instrument Form",
+                 "Responsible Person", "AMT Trade Product Pack", "series_id"],
         value_vars=month_cols,
         var_name="month_label",
         value_name="aemp",
     )
-
     # Parse month and clean
     long_df["month"] = pd.to_datetime(
         long_df["month_label"].str.replace("AEMP ", "", regex=False),
@@ -1335,12 +1335,12 @@ def build_chart_df(
         errors="coerce",
     )
     long_df["aemp"] = pd.to_numeric(long_df["aemp"], errors="coerce")
-
     long_df = (
         long_df.dropna(subset=["month", "aemp"])
                .drop(columns=["month_label"])
                .sort_values(["series_id", "display_name", "month"])
-               [["month", "display_name", "aemp", "Item Code", "Responsible Person", "AMT Trade Product Pack", "series_id"]]
+               [["month", "display_name", "aemp", "Item Code", "Legal Instrument Form",
+                 "Responsible Person", "AMT Trade Product Pack", "series_id"]]
                .reset_index(drop=True)
     )
     return long_df
