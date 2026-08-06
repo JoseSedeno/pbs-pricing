@@ -1898,10 +1898,131 @@ with tab_price:
             .interactive(bind_x=True)
         )
 
-        st.altair_chart(chart, use_container_width=True)
+        # ---- Exempt items (PBS API only) ----
+        @st.cache_data(show_spinner=False)
+        def load_exempt_codes(db_path: str, active_dataset: str, _ver: tuple):
+            """PBS codes exempt from statutory reductions (s84AH), latest schedule."""
+            if active_dataset != "PBS API":
+                return set()
+            con4 = duckdb.connect(str(db_path), read_only=True)
+            try:
+                latest = con4.execute(
+                    "SELECT MAX(_effective_date) FROM amt_items"
+                ).fetchone()[0]
+                rows = con4.execute("""
+                    SELECT DISTINCT i.pbs_code
+                    FROM amt_items a
+                    JOIN items i
+                      ON i.li_item_id = a.li_item_id
+                     AND i._effective_date = a._effective_date
+                    WHERE a.concept_type_code = 'MPUU'
+                      AND a.exempt_ind = 'Y'
+                      AND a._effective_date = ?
+                """, [latest]).fetchall()
+                return {str(r[0]).strip() for r in rows}
+            except Exception:
+                return set()
+            finally:
+                try:
+                    con4.close()
+                except Exception:
+                    pass
 
-        if not marker_df.empty:
-            st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
+        exempt_codes = load_exempt_codes(str(DB_PATH), dataset, DATA_VERSION)
+
+        # ---- One summary card per drug + form ----
+        def _money(x):
+            return f"${x:,.2f}"
+
+        summary_cards = []
+        if dataset == "PBS API" and "Legal Instrument Form" in filtered_df.columns:
+            for _drug in (selected_drugs or []):
+                sub_drug = filtered_df[filtered_df.get("__drug__", "") == _drug]
+                if sub_drug.empty:
+                    continue
+                for _form in sorted(set(sub_drug["Legal Instrument Form"].astype(str))):
+                    sub = sub_drug[sub_drug["Legal Instrument Form"].astype(str) == _form]
+                    if sub.empty:
+                        continue
+
+                    first_m, last_m = sub["month"].min(), sub["month"].max()
+                    per_series = sub.sort_values("month").groupby("series_id")["aemp"]
+                    firsts, lasts = per_series.first(), per_series.last()
+                    uniq_first = sorted(set(firsts.round(2)))
+                    uniq_last = sorted(set(lasts.round(2)))
+
+                    if len(uniq_last) == 1:
+                        latest_txt = _money(uniq_last[0])
+                    else:
+                        latest_txt = f"{_money(uniq_last[0])} – {_money(uniq_last[-1])}"
+
+                    if len(uniq_first) == 1 and len(uniq_last) == 1 and uniq_first[0]:
+                        _pct = (uniq_last[0] - uniq_first[0]) / uniq_first[0] * 100
+                        change_txt = f"{_pct:+.2f}% from {_money(uniq_first[0])}"
+                    else:
+                        change_txt = f"varies across {len(firsts)} products"
+
+                    codes = set(sub["Item Code"].astype(str).str.strip())
+
+                    if not marker_df.empty:
+                        ev_d = ev_view[
+                            ev_view["pbs_code"].astype(str).str.strip().isin(codes)
+                        ]
+                    else:
+                        ev_d = pd.DataFrame()
+
+                    if ev_d.empty:
+                        last_event_txt = "none in view"
+                    else:
+                        _lm = ev_d["event_month"].max()
+                        _labels = sorted(
+                            set(ev_d.loc[ev_d["event_month"] == _lm, "event_label"].astype(str))
+                        )
+                        last_event_txt = f"{_lm:%b %Y} · {', '.join(_labels)}"
+
+                    n_exempt = len(codes & exempt_codes)
+                    if n_exempt == 0:
+                        exempt_txt = "Not exempt"
+                    elif n_exempt == len(codes):
+                        exempt_txt = "Exempt (s84AH)"
+                    else:
+                        exempt_txt = f"{n_exempt} of {len(codes)} item codes exempt"
+
+                    summary_cards.append(
+                        {
+                            "drug": _drug,
+                            "form": _form,
+                            "range": f"{first_m:%b %Y} – {last_m:%b %Y}",
+                            "latest": latest_txt,
+                            "change": change_txt,
+                            "last_event": last_event_txt,
+                            "exempt": exempt_txt,
+                        }
+                    )
+
+        # ---- Layout: summary on the left, chart on the right ----
+        if summary_cards:
+            col_summary, col_chart = st.columns([1, 4])
+            with col_summary:
+                for c in summary_cards:
+                    st.markdown(f"**{c['drug']}**")
+                    st.caption(c["form"])
+                    st.caption(c["range"])
+                    st.markdown(f"### {c['latest']}")
+                    st.caption(c["change"])
+                    st.caption("Last change")
+                    st.write(c["last_event"])
+                    st.caption("Exemption")
+                    st.write(c["exempt"])
+                    st.divider()
+            with col_chart:
+                st.altair_chart(chart, use_container_width=True)
+                if not marker_df.empty:
+                    st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
+        else:
+            st.altair_chart(chart, use_container_width=True)
+            if not marker_df.empty:
+                st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
         
       # ---- Full identifiers list with matching colours (scrollable) ----
     with st.expander("Show full identifiers list", expanded=False):
