@@ -565,6 +565,11 @@ def ensure_db(dataset: str) -> Path:
     return db_path
 
 DB_PATH = ensure_db(dataset)
+
+con = duckdb.connect(str(DB_PATH), read_only=True)
+st.write("MAX snapshot:", con.execute("SELECT MAX(snapshot_date) FROM fact_monthly").fetchone())
+con.close()
+
 DATA_VERSION = (dataset, os.path.getmtime(DB_PATH))
 
 # ---- Open DuckDB ----
