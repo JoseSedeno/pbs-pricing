@@ -567,7 +567,19 @@ def ensure_db(dataset: str) -> Path:
 DB_PATH = ensure_db(dataset)
 
 con = duckdb.connect(str(DB_PATH), read_only=True)
-st.write("MAX snapshot:", con.execute("SELECT MAX(snapshot_date) FROM fact_monthly").fetchone())
+
+st.write(
+    "MAX snapshot:",
+    con.execute("SELECT MAX(snapshot_date) FROM fact_monthly").fetchone()
+)
+
+st.write(
+    "August wide rows:",
+    con.execute(
+        'SELECT COUNT(*) FROM wide_fixed WHERE "AEMP Aug 26" IS NOT NULL'
+    ).fetchone()
+)
+
 con.close()
 
 DATA_VERSION = (dataset, os.path.getmtime(DB_PATH))
