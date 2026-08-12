@@ -1941,6 +1941,11 @@ with tab_price:
                         change_txt = f"{_pct:+.2f}% from {_money(uniq_first[0])}"
                     else:
                         change_txt = f"varies across {len(firsts)} products"
+                    if "first_listed_date" in sub.columns:
+                        _flds = pd.to_datetime(sub["first_listed_date"], errors="coerce").dropna()
+                        first_listed_txt = f"{_flds.min():%b %Y}" if not _flds.empty else "unknown"
+                    else:
+                        first_listed_txt = "unknown"
                     codes = set(sub["Item Code"].astype(str).str.strip())
                     if not marker_df.empty and not ev_view.empty:
                         ev_d = ev_view[
@@ -1968,6 +1973,7 @@ with tab_price:
                             "drug": _drug,
                             "form": _form,
                             "range": f"{first_m:%b %Y} – {last_m:%b %Y}",
+                            "first_listed": first_listed_txt,
                             "latest": latest_txt,
                             "change": change_txt,
                             "last_event": last_event_txt,
@@ -1989,6 +1995,8 @@ with tab_price:
                     st.write(c["last_event"])
                     st.caption("Exemption")
                     st.write(c["exempt"])
+                    st.caption("First listed (current listing)")
+                    st.write(c["first_listed"])
                     st.divider()
             with col_chart:
                 st.altair_chart(chart, use_container_width=True)
