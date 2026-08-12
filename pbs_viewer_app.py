@@ -669,12 +669,12 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             "Formulary",
             "Responsible Person",
             "AMT Trade Product Pack",
+            "first_listed_date",
         ]
         for c in id_cols:
             if c not in long_df.columns:
                 long_df[c] = pd.NA
             long_df[c] = long_df[c].astype("string").fillna("")
-
         wide = (
             long_df
             .pivot_table(index=id_cols, columns="month_label", values="aemp", aggfunc="mean")
@@ -686,7 +686,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
         )
         wide = wide[[c for c in id_cols if c in wide.columns] + mcols]
         return wide, None, mtime
-
     if dataset == "PBS AEMP":
         try:
             wide = con2.execute('SELECT * FROM wide_fixed').df()
@@ -713,10 +712,8 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
                     if k in low:
                         return low[k]
                 return None
-
             # Canonicalize key columns and ensure presence
             colmap = {}
-
             # Responsible Person
             rp = _pick(
                 wide.columns,
@@ -725,7 +722,6 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             )
             if rp and rp != "Responsible Person":
                 colmap[rp] = "Responsible Person"
-
             # AMT Trade Product Pack
             amt = _pick(
                 wide.columns,
@@ -733,12 +729,10 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             )
             if amt and amt != "AMT Trade Product Pack":
                 colmap[amt] = "AMT Trade Product Pack"
-
             # Item Code
             ic = _pick(wide.columns, "Item Code", "Item Code B", "item_code_b", "item_code")
             if ic and ic != "Item Code":
                 colmap[ic] = "Item Code"
-
             # Legal Instrument Form
             lif = _pick(
                 wide.columns,
@@ -746,19 +740,15 @@ def load_wide_from_db(db_path: str, dataset: str, _ver: tuple):
             )
             if lif and lif != "Legal Instrument Form":
                 colmap[lif] = "Legal Instrument Form"
-
             # Apply renames in one go
             if colmap:
                 wide = wide.rename(columns=colmap)
-
             # Ensure presence and string dtype (keeps <NA>)
             for c in ["Responsible Person", "AMT Trade Product Pack", "Item Code", "Legal Instrument Form"]:
                 if c not in wide.columns:
                     wide[c] = pd.NA
                 wide[c] = wide[c].astype("string")
-
             return wide, built_at, mtime
-
         finally:
             try:
                 con2.close()
