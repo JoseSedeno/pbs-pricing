@@ -1178,6 +1178,7 @@ def build_export_table(
         "Formulary",
         "Responsible Person",
         "AMT Trade Product Pack",
+        "first_listed_date",
     ]
     fixed = [c for c in fixed if c in df.columns]
     return df[fixed + month_cols].reset_index(drop=True)
