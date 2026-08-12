@@ -1258,8 +1258,7 @@ def build_chart_df(
         ]
         return pd.DataFrame(columns=cols).head(0)
 
-    # --- Build display label and stable series_id ---
-
+# --- Build display label and stable series_id ---
     # Columns to show to the user in the label (use originals, hide empties)
     _disp_order = [
         "Item Code",
@@ -1270,19 +1269,16 @@ def build_chart_df(
         "Responsible Person",
     ]
     _disp_cols = [c for c in _disp_order if c in base.columns]
-
     # Safe string view with empties cleaned
     def _clean(s):
         if pd.isna(s):
             return ""
         t = str(s).strip()
         return "" if t in {"", "None", "nan", "<NA>"} else t
-
     base["display_name"] = base[_disp_cols].apply(
         lambda r: " · ".join([_clean(v) for v in r if _clean(v)]),
         axis=1
     )
-
     # Ensure raw key parts exist so schema is stable
     for c in [
         "Legal Instrument Drug",
@@ -1291,10 +1287,10 @@ def build_chart_df(
         "Legal Instrument Form",
         "Responsible Person",
         "AMT Trade Product Pack",
+        "first_listed_date",
     ]:
         if c not in base.columns:
             base[c] = pd.NA
-
     # Stable grouping key
     base["series_id"] = (
         base["Legal Instrument Drug"].map(_canon_val) + "|" +
@@ -1303,12 +1299,12 @@ def build_chart_df(
         base["Responsible Person"].map(_canon_val) + "|" +
         base["AMT Trade Product Pack"].map(_canon_val)
     )
-
     # Unpivot month columns
     month_cols = [c for c in base.columns if c.startswith("AEMP ")]
     long_df = base.melt(
         id_vars=["display_name", "Item Code", "Legal Instrument Form",
-                 "Responsible Person", "AMT Trade Product Pack", "series_id"],
+                 "Responsible Person", "AMT Trade Product Pack", "series_id",
+                 "first_listed_date"],
         value_vars=month_cols,
         var_name="month_label",
         value_name="aemp",
@@ -1325,11 +1321,12 @@ def build_chart_df(
                .drop(columns=["month_label"])
                .sort_values(["series_id", "display_name", "month"])
                [["month", "display_name", "aemp", "Item Code", "Legal Instrument Form",
-                 "Responsible Person", "AMT Trade Product Pack", "series_id"]]
+                 "Responsible Person", "AMT Trade Product Pack", "series_id",
+                 "first_listed_date"]]
                .reset_index(drop=True)
     )
     return long_df
-
+    
 # ---- Series & chart (compare across multiple drugs) ----
 st.write(f"**Database:** `{DB_PATH}`")
 
