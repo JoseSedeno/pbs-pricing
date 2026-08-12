@@ -1986,11 +1986,12 @@ with tab_price:
                 for c in summary_cards:
                     st.markdown(f"**{c['drug']}**")
                     st.caption(f"{c['form']} · {c['range']}")
+                    _no_change = c["change"].startswith("+0.00%")
                     st.metric(
                         label="AEMP",
                         value=c["latest"],
-                        delta=c["change"],
-                        delta_color="normal",
+                        delta=("no change in view" if _no_change else c["change"]),
+                        delta_color=("off" if _no_change else "normal"),
                     )
                     st.markdown(
                         f"<div style='font-size:0.82rem; line-height:1.7;'>"
