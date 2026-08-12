@@ -1985,16 +1985,21 @@ with tab_price:
             with col_summary:
                 for c in summary_cards:
                     st.markdown(f"**{c['drug']}**")
-                    st.caption(c["form"])
-                    st.caption(c["range"])
-                    st.markdown(f"### {c['latest']}")
-                    st.caption(c["change"])
-                    st.caption("Last change")
-                    st.write(c["last_event"])
-                    st.caption("Exemption")
-                    st.write(c["exempt"])
-                    st.caption("First listed (current listing)")
-                    st.write(c["first_listed"])
+                    st.caption(f"{c['form']} · {c['range']}")
+                    st.metric(
+                        label="AEMP",
+                        value=c["latest"],
+                        delta=c["change"],
+                        delta_color="normal",
+                    )
+                    st.markdown(
+                        f"<div style='font-size:0.82rem; line-height:1.7;'>"
+                        f"<span style='color:#808495;'>Last event</span> &nbsp;{c['last_event']}<br>"
+                        f"<span style='color:#808495;'>Exemption</span> &nbsp;{c['exempt']}<br>"
+                        f"<span style='color:#808495;'>First listed</span> &nbsp;{c['first_listed']}"
+                        f"</div>",
+                        unsafe_allow_html=True,
+                    )
                     st.divider()
             with col_chart:
                 st.altair_chart(chart, use_container_width=True)
@@ -2004,7 +2009,7 @@ with tab_price:
             st.altair_chart(chart, use_container_width=True)
             if not marker_df.empty:
                 st.caption("Dashed lines mark PBS pricing events. Hover for detail.")
-        
+                
       # ---- Full identifiers list with matching colours (scrollable) ----
     with st.expander("Show full identifiers list", expanded=False):
         if filtered_df.empty:
